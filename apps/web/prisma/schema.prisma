@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Run {
+  run_id        String   @id
+  project_id    String
+  environment   String
+  user_input    String
+  start_time    DateTime
+  end_time      DateTime?
+  total_latency Float?
+  total_tokens  Int?
+  total_cost    Float?
+  status        String
+  final_output  String?
+  metadata      String?
+
+  steps       Step[]
+  toolCalls   ToolCall[]
+  evaluations Evaluation[]
+
+  @@index([project_id, start_time])
+  @@index([environment])
+  @@index([status])
+}
+
+model Step {
+  step_id         String   @id
+  run_id          String
+  step_type       String
+  step_name       String
+  input_payload   String?
+  output_payload  String?
+  timestamp       DateTime
+  duration_ms     Float?
+  error_message   String?
+
+  run       Run        @relation(fields: [run_id], references: [run_id], onDelete: Cascade)
+  toolCalls ToolCall[]
+
+  @@index([run_id])
+}
+
+model ToolCall {
+  tool_call_id String   @id
+  run_id       String
+  step_id      String?
+  tool_name    String
+  input        String
+  output       String?
+  success      Boolean
+  duration_ms  Float?
+  timestamp    DateTime
+
+  run  Run   @relation(fields: [run_id], references: [run_id], onDelete: Cascade)
+  step Step? @relation(fields: [step_id], references: [step_id], onDelete: SetNull)
+
+  @@index([run_id])
+  @@index([tool_name])
+}
+
+model Evaluation {
+  evaluation_id String   @id
+  run_id        String
+  eval_type     String
+  score         Float?
+  rubric_name   String?
+  reviewer      String?
+  comments      String?
+  created_at    DateTime
+
+  run Run @relation(fields: [run_id], references: [run_id], onDelete: Cascade)
+
+  @@index([run_id])
+}

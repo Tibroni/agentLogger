@@ -1,0 +1,35 @@
+{
+  "name": "@agentlogger/sdk",
+  "version": "0.1.1",
+  "private": true,
+  "description": "SDK for tracing and monitoring AI agents — send runs, steps, and tool calls to an Agent Logger dashboard",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "dev": "tsup --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@agentlogger/core": "workspace:*",
+    "@types/node": "^22.10.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "keywords": ["ai", "agents", "observability", "tracing"],
+  "license": "MIT"
+}

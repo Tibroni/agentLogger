@@ -1,0 +1,23 @@
+{
+  "name": "@agentlogger/cli",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Start the Agent Logger dashboard locally from npm",
+  "type": "module",
+  "bin": {
+    "agentlogger": "./bin/agentlogger.js"
+  },
+  "files": ["bin", "dashboard"],
+  "scripts": {
+    "build": "node ../../scripts/bundle-dashboard.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["ai", "agents", "observability", "dashboard", "cli"],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

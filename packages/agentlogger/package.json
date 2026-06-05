@@ -1,0 +1,37 @@
+{
+  "name": "agentlogger",
+  "version": "1.0.1",
+  "description": "AI agent observability — trace agents in code and view runs in a local dashboard",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "agentlogger": "./bin/agentlogger.js"
+  },
+  "files": ["dist", "bin", "dashboard"],
+  "scripts": {
+    "build": "node ../../scripts/build-agentlogger-package.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@agentlogger/core": "workspace:*",
+    "@agentlogger/sdk": "workspace:*",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  },
+  "keywords": ["ai", "agents", "observability", "tracing", "dashboard"],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
