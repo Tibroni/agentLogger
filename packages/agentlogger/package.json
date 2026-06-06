@@ -1,6 +1,6 @@
 {
   "name": "agentlogger",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "AI agent observability — trace agents in code and view runs in a local dashboard",
   "type": "module",
   "main": "./dist/index.js",

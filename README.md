@@ -23,13 +23,13 @@ No cloud account required. Works great during development and early production d
 
 ## Features
 
-| Area | What you get |
-|------|----------------|
-| **SDK** | `init`, `startRun`, `withRun`, steps, tool-call logging, batch ingest with retries |
-| **Dashboard** | Run list, run detail timeline, status badges, expandable step/tool payloads |
-| **CLI** | `npx agentlogger dashboard` — bundled Next.js app, no separate install |
-| **API** | Ingest, runs list/detail, health check, JSON export, evaluations |
-| **Data** | Runs, steps, tool calls, tokens/cost metadata, SQLite via Prisma |
+| Area          | What you get                                                                       |
+| ------------- | ---------------------------------------------------------------------------------- |
+| **SDK**       | `init`, `startRun`, `withRun`, steps, tool-call logging, batch ingest with retries |
+| **Dashboard** | Run list, run detail timeline, status badges, expandable step/tool payloads        |
+| **CLI**       | `npx agentlogger dashboard` — bundled Next.js app, no separate install             |
+| **API**       | Ingest, runs list/detail, health check, JSON export, evaluations                   |
+| **Data**      | Runs, steps, tool calls, tokens/cost metadata, SQLite via Prisma                   |
 
 ---
 
@@ -123,14 +123,11 @@ Or wrap an entire handler with automatic success/error handling:
 ```ts
 import { withRun } from "agentlogger";
 
-const result = await withRun(
-  { userInput: "Hello" },
-  async (run) => {
-    const step = run.startStep({ type: "llm", name: "greet" });
-    step.end({ output: "Hi there!" });
-    return "Hi there!";
-  }
-);
+const result = await withRun({ userInput: "Hello" }, async (run) => {
+  const step = run.startStep({ type: "llm", name: "greet" });
+  step.end({ output: "Hi there!" });
+  return "Hi there!";
+});
 ```
 
 ### 5. View traces
@@ -141,15 +138,15 @@ Go to **http://localhost:3000/runs** and click **Refresh**. Open a run to see th
 
 ## SDK reference
 
-| Function | Description |
-|----------|-------------|
-| `init(options)` | Set `projectId`, `apiKey`, `baseUrl`, and optional `environment` |
-| `startRun({ userInput, metadata? })` | Begin a traced run; returns an `AgentRun` handle |
-| `run.startStep({ type, name, input? })` | Start a step; call `.end()` or `.fail()` on the returned step |
-| `run.logToolCall({ toolName, input, output?, success, durationMs?, stepId? })` | Record a tool invocation |
-| `run.end({ finalOutput?, status?, tokens?, cost? })` | Finish the run and flush traces to the dashboard |
-| `withRun(options, fn)` | Run an async function inside a traced run (auto end on success/error) |
-| `flush()` | Manually send the pending batch (usually called by `run.end()`) |
+| Function                                                                       | Description                                                           |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `init(options)`                                                                | Set `projectId`, `apiKey`, `baseUrl`, and optional `environment`      |
+| `startRun({ userInput, metadata? })`                                           | Begin a traced run; returns an `AgentRun` handle                      |
+| `run.startStep({ type, name, input? })`                                        | Start a step; call `.end()` or `.fail()` on the returned step         |
+| `run.logToolCall({ toolName, input, output?, success, durationMs?, stepId? })` | Record a tool invocation                                              |
+| `run.end({ finalOutput?, status?, tokens?, cost? })`                           | Finish the run and flush traces to the dashboard                      |
+| `withRun(options, fn)`                                                         | Run an async function inside a traced run (auto end on success/error) |
+| `flush()`                                                                      | Manually send the pending batch (usually called by `run.end()`)       |
 
 Traces are sent to `POST /api/v1/ingest` with `Authorization: Bearer <apiKey>`.
 
@@ -165,13 +162,13 @@ npx agentlogger help        # Show commands and env vars
 
 ### Environment variables
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `PORT` | `3000` | Dashboard port |
-| `OBSERVABILITY_API_KEY` | `dev-api-key-change-me` | API auth for ingest |
-| `NEXT_PUBLIC_OBSERVABILITY_API_KEY` | same as above | Client-side API calls |
-| `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID` | *(none)* | Filter runs to one project |
-| `DATABASE_URL` | `file:~/.agentlogger/data.db` | SQLite database path |
+| Variable                               | Default                       | Purpose                    |
+| -------------------------------------- | ----------------------------- | -------------------------- |
+| `PORT`                                 | `3000`                        | Dashboard port             |
+| `OBSERVABILITY_API_KEY`                | `dev-api-key-change-me`       | API auth for ingest        |
+| `NEXT_PUBLIC_OBSERVABILITY_API_KEY`    | same as above                 | Client-side API calls      |
+| `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID` | _(none)_                      | Filter runs to one project |
+| `DATABASE_URL`                         | `file:~/.agentlogger/data.db` | SQLite database path       |
 
 ---
 
@@ -218,12 +215,12 @@ examples/minimal-agent Sample traced agent
 
 ## Troubleshooting
 
-| Problem | What to check |
-|---------|----------------|
+| Problem                | What to check                                                                                                                 |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | No traces in dashboard | Is the dashboard running? Same `OBSERVABILITY_API_KEY` in SDK and dashboard? Did you call `await run.end()`? Refresh `/runs`. |
-| Wrong project's runs | Set `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID` to match SDK `projectId`. |
-| `SDK not initialized` | Call `init()` before `startRun()` or `withRun()`. |
-| Port already in use | Set `PORT=3001` (or another free port) before starting the dashboard. |
+| Wrong project's runs   | Set `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID` to match SDK `projectId`.                                                          |
+| `SDK not initialized`  | Call `init()` before `startRun()` or `withRun()`.                                                                             |
+| Port already in use    | Set `PORT=3001` (or another free port) before starting the dashboard.                                                         |
 
 ---
 
