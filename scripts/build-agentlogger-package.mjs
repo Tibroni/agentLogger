@@ -78,6 +78,16 @@ const prismaSrc = path.join(webDir, "prisma");
 const prismaDest = path.join(dest, "apps/web/prisma");
 cpSync(prismaSrc, prismaDest, { recursive: true });
 
+// Never ship local dev/test databases — only template.db for first-run setup
+for (const dbName of ["dev.db", "test.db", "e2e.db", "dev.db-journal", "test.db-journal", "e2e.db-journal"]) {
+  const dbPath = path.join(prismaDest, dbName);
+  if (existsSync(dbPath)) rmSync(dbPath, { force: true });
+}
+
+// Never ship .env from the web app into the npm bundle
+const bundledEnv = path.join(dest, "apps/web/.env");
+if (existsSync(bundledEnv)) rmSync(bundledEnv, { force: true });
+
 const templateDb = path.join(prismaDest, "template.db");
 execSync("pnpm exec prisma db push --skip-generate", {
   cwd: webDir,

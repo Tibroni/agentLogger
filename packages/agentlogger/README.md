@@ -1,226 +1,279 @@
 # Agent Logger
 
-**Local-first observability for AI agents.** Instrument your agent code with a lightweight SDK, run a dashboard on your machine, and inspect every run — steps, tool calls, latency, tokens, and errors — without sending data to a third party.
+<p align="center">
+  <strong>Local-first observability for AI agents</strong><br/>
+  Install once, run your agent, and inspect every LLM call, tool invocation, and error — all on your machine.
+</p>
 
-[![npm version](https://img.shields.io/npm/v/agentlogger.svg)](https://www.npmjs.com/package/agentlogger)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org/)
-
----
-
-## Why Agent Logger?
-
-Building agents means debugging chains of LLM calls, tools, and retries. Agent Logger gives you a clear timeline for each conversation:
-
-- **See what happened** — user input, each step, tool inputs/outputs, final response
-- **Stay local** — traces live in a SQLite database on your machine (`~/.agentlogger/data.db`)
-- **One install** — npm package includes both the tracing SDK and the dashboard CLI
-- **Project-scoped** — filter the dashboard to a single app or agent via `projectId`
-
-No cloud account required. Works great during development and early production debugging.
+<p align="center">
+  <a href="https://www.npmjs.com/package/agentlogger"><img src="https://img.shields.io/npm/v/agentlogger.svg" alt="npm version" /></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg" alt="Node.js 18+" />
+</p>
 
 ---
 
-## Features
+## Overview
 
-| Area          | What you get                                                                       |
-| ------------- | ---------------------------------------------------------------------------------- |
-| **SDK**       | `init`, `startRun`, `withRun`, steps, tool-call logging, batch ingest with retries |
-| **Dashboard** | Run list, run detail timeline, status badges, expandable step/tool payloads        |
-| **CLI**       | `npx agentlogger dashboard` — bundled Next.js app, no separate install             |
-| **API**       | Ingest, runs list/detail, health check, JSON export, evaluations                   |
-| **Data**      | Runs, steps, tool calls, tokens/cost metadata, SQLite via Prisma                   |
+**Agent Logger** records what your AI agent does — user inputs, model calls, tool usage, latency, token counts, and failures — and displays it in a local web dashboard. No cloud account. No third-party telemetry. Data stays in a SQLite file on your computer (`~/.agentlogger/data.db`).
+
+### Why use it?
+
+Building agents means debugging chains of LLM calls, tools, and retries. Agent Logger gives you a clear **timeline for every run** so you can answer:
+
+- What did the user ask?
+- Which model calls were made, in what order?
+- What tools ran, with what inputs and outputs?
+- Where did it fail, and how long did each step take?
 
 ---
 
-## Install
+## Quick start (automatic tracing)
+
+### 1. Install
 
 ```bash
 npm install agentlogger
 ```
 
-Requires **Node.js 18+**.
+On install, Agent Logger runs a one-time setup that:
 
-The package includes:
+- Adds `import "agentlogger/auto"` to your project's entry file
+- Creates a `.env` file with sensible defaults (if one doesn't exist)
 
-- **`agentlogger`** (import) — tracing SDK
-- **`agentlogger` CLI** — local dashboard server
+To skip automatic setup (e.g. in CI): `AGENTLOGGER_SKIP_SETUP=1 npm install agentlogger`
+
+### 2. Start the dashboard
+
+```bash
+npx agentlogger dashboard
+```
+
+Open **http://localhost:3000**. Scope the UI to your project:
+
+```bash
+export NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID=my-agent
+npx agentlogger dashboard
+```
+
+### 3. Run your agent
+
+Run your agent as you normally would. **No manual tracing code required.**
+
+Agent Logger automatically records:
+
+| Event | How it's captured |
+| ----- | ----------------- |
+| LLM / model calls | Intercepts HTTP `fetch` requests to AI providers |
+| Tool calls | Via `instrumentTools()` (auto-applied when setup detects a tools file) |
+| Errors & crashes | Hooks into uncaught exceptions and failed requests |
+| Run lifecycle | Starts on first activity, ends when your process exits |
+
+Works with **any HTTP-based model** — OpenAI, Anthropic, Ollama, Groq, Together, local vLLM, custom endpoints, and more.
+
+### 4. View traces
+
+Go to **http://localhost:3000/runs**, click **Refresh**, and open a run to see the full timeline.
 
 ---
 
-## Quick start
+## How auto-instrumentation works
 
-### 1. Start the dashboard
+```text
+npm install agentlogger
+        │
+        ▼
+  postinstall setup
+  • patches entry file
+  • creates .env
+        │
+        ▼
+import "agentlogger/auto"   ← runs before your code
+        │
+        ├── patches global fetch  → logs LLM calls (any provider)
+        ├── wraps tool functions  → logs tool inputs/outputs
+        └── hooks process exit    → flushes traces to dashboard
+        │
+        ▼
+  POST /api/v1/ingest  →  SQLite  →  Dashboard UI
+```
+
+### Provider-agnostic LLM detection
+
+Agent Logger does **not** require OpenAI or Anthropic SDKs. It watches outgoing `fetch` calls and detects LLM requests by:
+
+- Request body shape (`model`, `messages`, `prompt`, etc.)
+- Known AI provider hostnames (configurable via `AGENTLOGGER_LLM_HOSTS`)
+- Opt-in header: `X-AgentLogger-Trace: llm` for custom endpoints
+
+Token usage is extracted when present (OpenAI, Anthropic, Gemini, Ollama response formats).
+
+### Tool tracing
+
+Wrap your tool registry once:
+
+```ts
+import { instrumentTools } from "agentlogger/auto";
+
+export const tools = instrumentTools({
+  getWeather: async (city: string) => { /* ... */ },
+  searchDocs: async (query: string) => { /* ... */ },
+});
+```
+
+Or wrap individual tools: `wrapTool("getWeather", fn)`.
+
+---
+
+## Manual instrumentation (optional)
+
+For full control, use the SDK directly:
+
+```ts
+import { init, startRun, withRun } from "agentlogger";
+
+init({ projectId: "my-agent" });
+
+const run = startRun({ userInput: "Hello" });
+const step = run.startStep({ type: "llm", name: "greet" });
+step.end({ output: "Hi!" });
+await run.end({ finalOutput: "Hi!", tokens: 42 });
+```
+
+Or wrap an entire handler:
+
+```ts
+await withRun({ userInput: "Hello" }, async (run) => {
+  run.startStep({ type: "llm", name: "answer" }).end({ output: "Hi!" });
+  return "Hi!";
+});
+```
+
+---
+
+## CLI reference
 
 ```bash
-npx agentlogger dashboard
+npx agentlogger dashboard   # Start the local dashboard (default)
+npx agentlogger setup       # Re-run project setup (patch entry, create .env)
+npx agentlogger help        # Show commands and environment variables
 ```
 
-Open **http://localhost:3000**. On first run, a database is created at `~/.agentlogger/data.db`.
+---
 
-To scope the UI to one project (must match SDK `projectId`):
+## Configuration
 
-```bash
-export NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID=my-chatbot
-export OBSERVABILITY_API_KEY=dev-api-key-change-me
-npx agentlogger dashboard
-```
+### Environment variables
 
-### 2. Configure your agent
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `OBSERVABILITY_URL` | `http://localhost:3000` | Dashboard URL for trace ingest |
+| `OBSERVABILITY_API_KEY` | `dev-api-key-change-me` | Auth key (must match dashboard) |
+| `AGENTLOGGER_PROJECT_ID` | `package.json` name | Project identifier for traces |
+| `AGENTLOGGER_FLUSH_INTERVAL_MS` | `3000` | How often to sync traces while a run is active |
+| `AGENTLOGGER_LLM_HOSTS` | _(built-in list)_ | Extra LLM hostnames, comma-separated |
+| `AGENTLOGGER_USER_INPUT` | auto-generated | Label for auto-created runs |
+| `AGENTLOGGER_SKIP_SETUP` | — | Set to `1` to skip postinstall setup |
+| `AGENTLOGGER_FAIL_OPEN` | `true` (auto mode) | Don't crash your agent if dashboard is down |
 
-Create a `.env` file in your project:
+### Dashboard variables
 
-```env
-OBSERVABILITY_URL=http://localhost:3000
-OBSERVABILITY_API_KEY=dev-api-key-change-me
-```
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `PORT` | `3000` | Dashboard port |
+| `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID` | — | Filter UI to one project |
+| `DATABASE_URL` | `file:~/.agentlogger/data.db` | SQLite database path |
 
-### 3. Initialize the SDK once at startup
+---
+
+## HTTP server middleware
+
+For agents deployed as API servers, use one traced run per request:
 
 ```ts
-import { init, startRun } from "agentlogger";
+import express from "express";
+import { agentLoggerMiddleware } from "agentlogger/middleware/http";
 
-init({
-  projectId: "my-chatbot",
-  apiKey: process.env.OBSERVABILITY_API_KEY,
-  baseUrl: process.env.OBSERVABILITY_URL ?? "http://localhost:3000",
-  environment: "development",
-});
+const app = express();
+app.use(express.json());
+app.use(agentLoggerMiddleware({ userInputFrom: "message" }));
 ```
-
-### 4. Trace a run
-
-```ts
-const run = startRun({
-  userInput: "What is the weather in NYC?",
-  metadata: { model: "gpt-4o" },
-});
-
-const plan = run.startStep({ type: "llm", name: "plan" });
-plan.end({ output: { intent: "weather lookup" } });
-
-run.logToolCall({
-  toolName: "get_weather",
-  input: { city: "NYC" },
-  output: { temp_f: 72, condition: "sunny" },
-  success: true,
-  durationMs: 48,
-  stepId: plan.stepId,
-});
-
-const answer = run.startStep({ type: "llm", name: "answer" });
-answer.end({ output: "It's 72°F and sunny in NYC." });
-
-await run.end({
-  finalOutput: "It's 72°F and sunny in NYC.",
-  tokens: 120,
-  cost: 0.0015,
-});
-```
-
-Or wrap an entire handler with automatic success/error handling:
-
-```ts
-import { withRun } from "agentlogger";
-
-const result = await withRun({ userInput: "Hello" }, async (run) => {
-  const step = run.startStep({ type: "llm", name: "greet" });
-  step.end({ output: "Hi there!" });
-  return "Hi there!";
-});
-```
-
-### 5. View traces
-
-Go to **http://localhost:3000/runs** and click **Refresh**. Open a run to see the full timeline.
 
 ---
 
 ## SDK reference
 
-| Function                                                                       | Description                                                           |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| `init(options)`                                                                | Set `projectId`, `apiKey`, `baseUrl`, and optional `environment`      |
-| `startRun({ userInput, metadata? })`                                           | Begin a traced run; returns an `AgentRun` handle                      |
-| `run.startStep({ type, name, input? })`                                        | Start a step; call `.end()` or `.fail()` on the returned step         |
-| `run.logToolCall({ toolName, input, output?, success, durationMs?, stepId? })` | Record a tool invocation                                              |
-| `run.end({ finalOutput?, status?, tokens?, cost? })`                           | Finish the run and flush traces to the dashboard                      |
-| `withRun(options, fn)`                                                         | Run an async function inside a traced run (auto end on success/error) |
-| `flush()`                                                                      | Manually send the pending batch (usually called by `run.end()`)       |
+| Function | Description |
+| -------- | ----------- |
+| `init(options)` | Configure project ID, API key, base URL |
+| `startRun({ userInput, metadata? })` | Begin a traced run |
+| `run.startStep({ type, name, input? })` | Start a step; call `.end()` or `.fail()` |
+| `run.logToolCall({ toolName, input, output?, success, durationMs? })` | Record a tool call |
+| `run.recordUsage({ totalTokens?, model?, provider? })` | Accumulate token usage |
+| `run.end({ finalOutput?, status?, tokens?, cost? })` | Finish run and flush traces |
+| `withRun(options, fn)` | Auto end on success/error |
+| `flush()` | Manually send pending batch |
 
-Traces are sent to `POST /api/v1/ingest` with `Authorization: Bearer <apiKey>`.
+### Package exports
 
----
-
-## CLI
-
-```bash
-npx agentlogger dashboard   # Start dashboard (default)
-npx agentlogger start       # Alias for dashboard
-npx agentlogger help        # Show commands and env vars
-```
-
-### Environment variables
-
-| Variable                               | Default                       | Purpose                    |
-| -------------------------------------- | ----------------------------- | -------------------------- |
-| `PORT`                                 | `3000`                        | Dashboard port             |
-| `OBSERVABILITY_API_KEY`                | `dev-api-key-change-me`       | API auth for ingest        |
-| `NEXT_PUBLIC_OBSERVABILITY_API_KEY`    | same as above                 | Client-side API calls      |
-| `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID` | _(none)_                      | Filter runs to one project |
-| `DATABASE_URL`                         | `file:~/.agentlogger/data.db` | SQLite database path       |
+| Import path | Purpose |
+| ----------- | ------- |
+| `agentlogger` | Manual SDK |
+| `agentlogger/auto` | Auto-instrumentation (side-effect import) |
+| `agentlogger/middleware/http` | HTTP server middleware |
 
 ---
 
 ## Project isolation
 
-The dashboard shows **one project at a time**. Use the same identifier in both places:
+The dashboard shows **one project at a time**. Use the same ID in both places:
 
-- **SDK:** `init({ projectId: "my-chatbot" })`
-- **Dashboard:** `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID=my-chatbot`
-
-If `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID` is unset, the dashboard may show runs from all projects that share the same API key.
-
----
-
-## Development (from source)
-
-For contributing, custom deployments, or running the full monorepo:
-
-```bash
-git clone https://github.com/tibroni/agentLogger.git
-cd agentLogger
-
-cp .env.example .env
-cp apps/web/.env.example apps/web/.env
-
-pnpm install
-pnpm db:push
-pnpm dev:dashboard
-```
-
-The dashboard dev server runs at **http://localhost:3000**. Run tests with `pnpm test` and end-to-end checks with `pnpm test:e2e`.
-
-### Repository layout
-
-```
-apps/web/              Next.js dashboard + REST API
-packages/core/         Shared Zod schemas
-packages/sdk/          Tracing SDK (bundled into npm package)
-packages/agentlogger/  Published npm package (SDK + CLI + dashboard bundle)
-examples/minimal-agent Sample traced agent
-```
+- **Auto mode:** `AGENTLOGGER_PROJECT_ID=my-agent` in `.env`
+- **Manual SDK:** `init({ projectId: "my-agent" })`
+- **Dashboard:** `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID=my-agent`
 
 ---
 
 ## Troubleshooting
 
-| Problem                | What to check                                                                                                                 |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| No traces in dashboard | Is the dashboard running? Same `OBSERVABILITY_API_KEY` in SDK and dashboard? Did you call `await run.end()`? Refresh `/runs`. |
-| Wrong project's runs   | Set `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID` to match SDK `projectId`.                                                          |
-| `SDK not initialized`  | Call `init()` before `startRun()` or `withRun()`.                                                                             |
-| Port already in use    | Set `PORT=3001` (or another free port) before starting the dashboard.                                                         |
+| Problem | Solution |
+| ------- | -------- |
+| No traces in dashboard | Is `npx agentlogger dashboard` running? Same API key in `.env` and dashboard? Refresh `/runs`. |
+| Wrong project's runs | Set `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID` to match `AGENTLOGGER_PROJECT_ID`. |
+| Auto setup didn't patch entry | Run `npx agentlogger setup` manually, or add `import "agentlogger/auto"` yourself. |
+| LLM calls not traced | Ensure requests use `fetch` with a JSON body containing `model` + `messages`. For custom endpoints, add `X-AgentLogger-Trace: llm` header or set `AGENTLOGGER_LLM_HOSTS`. |
+| Agent crashes when dashboard is down | Auto mode is fail-open by default. Set `AGENTLOGGER_FAIL_OPEN=true`. |
+| Port already in use | `PORT=3001 npx agentlogger dashboard` |
+
+---
+
+## Development (from source)
+
+```bash
+git clone https://github.com/tibroni/agentLogger.git
+cd agentLogger
+cp .env.example .env
+cp apps/web/.env.example apps/web/.env
+pnpm install
+pnpm db:push
+pnpm dev:dashboard
+```
+
+```bash
+pnpm test          # unit + integration tests
+pnpm test:e2e      # full-stack acceptance tests
+pnpm build:npm     # build publishable npm package
+```
+
+### Repository layout
+
+```text
+apps/web/              Next.js dashboard + REST API
+packages/core/         Shared Zod schemas
+packages/sdk/          Tracing SDK + auto-instrumentation
+packages/agentlogger/  Published npm package (SDK + CLI + dashboard)
+examples/minimal-agent Auto and manual tracing examples
+```
 
 ---
 

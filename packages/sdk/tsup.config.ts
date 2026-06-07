@@ -1,11 +1,14 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: {
+    index: "src/index.ts",
+    "auto/index": "src/auto/index.ts",
+    "middleware/http": "src/middleware/http.ts",
+  },
   format: ["esm"],
   dts: true,
   clean: true,
   sourcemap: true,
-  // Bundle shared schemas so consumers only install @agentlogger/sdk
   noExternal: ["@agentlogger/core"],
 });

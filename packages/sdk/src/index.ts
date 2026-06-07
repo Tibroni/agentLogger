@@ -12,6 +12,10 @@ export interface InitOptions {
   baseUrl?: string;
   projectId: string;
   environment?: string;
+  /** When true, flush failures log a warning instead of throwing. Default false. */
+  failOpen?: boolean;
+  /** Periodically flush pending traces while runs are active (ms). 0 = disabled. */
+  flushIntervalMs?: number;
 }
 
 export interface StartRunOptions {
@@ -42,6 +46,14 @@ export interface LogToolCallOptions {
   stepId?: string;
 }
 
+export interface RecordUsageOptions {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  model?: string;
+  provider?: string;
+}
+
 export interface EndRunOptions {
   finalOutput?: string;
   status?: RunStatus;
@@ -53,6 +65,7 @@ export interface AgentRun {
   runId: string;
   startStep(options: StartStepOptions): AgentStep;
   logToolCall(options: LogToolCallOptions): void;
+  recordUsage(options: RecordUsageOptions): void;
   end(options?: EndRunOptions): Promise<void>;
 }
 
@@ -62,18 +75,64 @@ export interface AgentStep {
   fail(options: FailStepOptions): void;
 }
 
+export interface FlushOptions {
+  /** Keep runs with status "running" in the pending batch after flush. */
+  keepRunningRuns?: boolean;
+}
+
 interface SdkConfig {
   apiKey: string;
   baseUrl: string;
   projectId: string;
   environment: string;
+  failOpen: boolean;
+  flushIntervalMs: number;
 }
 
 let config: SdkConfig | null = null;
+let flushTimer: ReturnType<typeof setInterval> | null = null;
+let flushWarned = false;
+let shutdownHooksRegistered = false;
 
 const pendingRuns: Run[] = [];
 const pendingSteps: Step[] = [];
 const pendingToolCalls: ToolCall[] = [];
+
+const runUsageTotals = new Map<string, { tokens: number; model?: string }>();
+
+function scheduleFlushInterval(): void {
+  if (flushTimer) {
+    clearInterval(flushTimer);
+    flushTimer = null;
+  }
+  const ms = config?.flushIntervalMs ?? 0;
+  if (ms <= 0) return;
+
+  flushTimer = setInterval(() => {
+    void flush({ keepRunningRuns: true }).catch(() => {
+      /* fail-open handled inside flush */
+    });
+  }, ms);
+  if (typeof flushTimer === "object" && "unref" in flushTimer) {
+    flushTimer.unref();
+  }
+}
+
+function registerShutdownHooks(): void {
+  if (shutdownHooksRegistered) return;
+  shutdownHooksRegistered = true;
+
+  const onShutdown = () => {
+    void flush().catch(() => undefined);
+  };
+
+  process.on("beforeExit", onShutdown);
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.once(signal, () => {
+      void flush().finally(() => process.exit(0));
+    });
+  }
+}
 
 export function init(options: InitOptions): void {
   config = {
@@ -87,7 +146,18 @@ export function init(options: InitOptions): void {
       "http://localhost:3000",
     projectId: options.projectId,
     environment: options.environment ?? "development",
+    failOpen: options.failOpen ?? false,
+    flushIntervalMs:
+      options.flushIntervalMs ??
+      Number(process.env.AGENTLOGGER_FLUSH_INTERVAL_MS ?? 0),
   };
+
+  scheduleFlushInterval();
+  registerShutdownHooks();
+}
+
+export function isInitialized(): boolean {
+  return config !== null;
 }
 
 export function getConfig(): SdkConfig {
@@ -100,10 +170,17 @@ export function getConfig(): SdkConfig {
 }
 
 export function resetForTests(): void {
+  if (flushTimer) {
+    clearInterval(flushTimer);
+    flushTimer = null;
+  }
   config = null;
+  shutdownHooksRegistered = false;
+  flushWarned = false;
   pendingRuns.length = 0;
   pendingSteps.length = 0;
   pendingToolCalls.length = 0;
+  runUsageTotals.clear();
 }
 
 export function getPendingBatch(): IngestBatchV1 {
@@ -114,8 +191,14 @@ export function getPendingBatch(): IngestBatchV1 {
   };
 }
 
-export function clearPendingBatch(): void {
-  pendingRuns.length = 0;
+export function clearPendingBatch(options?: FlushOptions): void {
+  if (options?.keepRunningRuns) {
+    const running = pendingRuns.filter((r) => r.status === "running");
+    pendingRuns.length = 0;
+    pendingRuns.push(...running);
+  } else {
+    pendingRuns.length = 0;
+  }
   pendingSteps.length = 0;
   pendingToolCalls.length = 0;
 }
@@ -124,7 +207,17 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function flush(): Promise<void> {
+function warnFlushFailure(error: unknown): void {
+  if (!flushWarned) {
+    flushWarned = true;
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[agentlogger] Failed to send traces (dashboard unreachable?): ${message}`
+    );
+  }
+}
+
+export async function flush(options?: FlushOptions): Promise<void> {
   const batch = getPendingBatch();
   if (
     !batch.runs?.length &&
@@ -134,7 +227,7 @@ export async function flush(): Promise<void> {
     return;
   }
 
-  const { apiKey, baseUrl } = getConfig();
+  const { apiKey, baseUrl, failOpen } = getConfig();
   const url = `${baseUrl.replace(/\/$/, "")}/api/v1/ingest`;
 
   let lastError: unknown;
@@ -154,7 +247,7 @@ export async function flush(): Promise<void> {
         throw new Error(`Ingest failed (${response.status}): ${text}`);
       }
 
-      clearPendingBatch();
+      clearPendingBatch(options);
       return;
     } catch (error) {
       lastError = error;
@@ -162,6 +255,11 @@ export async function flush(): Promise<void> {
         await sleep(2 ** attempt * 100);
       }
     }
+  }
+
+  if (failOpen) {
+    warnFlushFailure(lastError);
+    return;
   }
 
   throw lastError;
@@ -183,6 +281,7 @@ export function startRun(options: StartRunOptions): AgentRun {
   };
 
   pendingRuns.push(runRecord);
+  runUsageTotals.set(runId, { tokens: 0 });
 
   const updateRunRecord = (updates: Partial<Run>) => {
     Object.assign(runRecord, updates);
@@ -255,20 +354,39 @@ export function startRun(options: StartRunOptions): AgentRun {
       pendingToolCalls.push(toolCall);
     },
 
+    recordUsage(usageOptions: RecordUsageOptions): void {
+      const current = runUsageTotals.get(runId) ?? { tokens: 0 };
+      const added =
+        usageOptions.totalTokens ??
+        (usageOptions.promptTokens ?? 0) + (usageOptions.completionTokens ?? 0);
+      current.tokens += added;
+      if (usageOptions.model) current.model = usageOptions.model;
+      runUsageTotals.set(runId, current);
+
+      const metadata: Record<string, unknown> = {
+        ...(runRecord.metadata as Record<string, unknown> | undefined),
+        last_model: usageOptions.model,
+        last_provider: usageOptions.provider,
+      };
+      updateRunRecord({ metadata, total_tokens: current.tokens });
+    },
+
     async end(endOptions?: EndRunOptions): Promise<void> {
       const endTime = new Date();
       const startMs = new Date(runRecord.start_time).getTime();
       const totalLatency = endTime.getTime() - startMs;
+      const usage = runUsageTotals.get(runId);
 
       updateRunRecord({
         end_time: endTime.toISOString(),
         total_latency: totalLatency,
-        total_tokens: endOptions?.tokens,
+        total_tokens: endOptions?.tokens ?? usage?.tokens,
         total_cost: endOptions?.cost,
         status: endOptions?.status ?? "success",
         final_output: endOptions?.finalOutput,
       });
 
+      runUsageTotals.delete(runId);
       await flush();
     },
   };

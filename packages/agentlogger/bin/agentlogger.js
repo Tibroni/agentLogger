@@ -4,6 +4,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
+import { runSetup } from "./setup.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const bundleRoot = path.join(__dirname, "..", "dashboard");
@@ -18,6 +19,7 @@ Agent Logger
 
   agentlogger dashboard   Start the local dashboard (default)
   agentlogger start       Same as dashboard
+  agentlogger setup       Configure auto-instrumentation in this project
   agentlogger help        Show this message
 
 Environment variables:
@@ -25,6 +27,9 @@ Environment variables:
   OBSERVABILITY_API_KEY                 Default dev-api-key-change-me
   NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID  Filter runs to one project
   DATABASE_URL                          Default ~/.agentlogger/data.db
+  AGENTLOGGER_SKIP_SETUP=1              Skip postinstall auto-setup
+  AGENTLOGGER_PROJECT_ID                Project name for traces
+  AGENTLOGGER_LLM_HOSTS                 Extra LLM hostnames (comma-separated)
 `);
 }
 
@@ -34,6 +39,7 @@ function ensureDatabase(databaseUrl) {
 
   const templateDb = path.join(serverCwd, "prisma/template.db");
   if (fs.existsSync(templateDb)) {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     fs.copyFileSync(templateDb, dbPath);
   }
 }
@@ -61,8 +67,12 @@ function startDashboard() {
   console.log(`Agent Logger dashboard → http://localhost:${port}`);
   if (process.env.NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID) {
     console.log(`Project filter: ${process.env.NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID}`);
+  } else if (process.env.AGENTLOGGER_PROJECT_ID) {
+    console.log(
+      `Tip: set NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID=${process.env.AGENTLOGGER_PROJECT_ID} to filter the dashboard`
+    );
   } else {
-    console.log("Tip: set NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID to match your SDK projectId");
+    console.log("Tip: set NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID to match your project");
   }
 
   ensureDatabase(process.env.DATABASE_URL);
@@ -78,6 +88,8 @@ function startDashboard() {
 
 if (subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
   printHelp();
+} else if (subcommand === "setup") {
+  runSetup(process.argv.slice(3));
 } else if (subcommand === "dashboard" || subcommand === "start" || subcommand === "dev") {
   startDashboard();
 } else {

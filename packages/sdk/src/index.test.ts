@@ -5,6 +5,7 @@ import {
   withRun,
   flush,
   resetForTests,
+  isInitialized,
 } from "./index.js";
 
 const mockFetch = vi.fn();
@@ -119,6 +120,32 @@ describe("SDK", () => {
   it("throws if init not called", () => {
     resetForTests();
     expect(() => startRun({ userInput: "x" })).toThrow("not initialized");
+  });
+
+  it("recordUsage accumulates tokens on run", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 202, text: async () => "" });
+    const run = startRun({ userInput: "usage" });
+    run.recordUsage({ totalTokens: 50, model: "gpt-4o" });
+    run.recordUsage({ promptTokens: 10, completionTokens: 5 });
+    await run.end();
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.runs[0].total_tokens).toBe(65);
+  });
+
+  it("isInitialized reflects init state", () => {
+    expect(isInitialized()).toBe(true);
+    resetForTests();
+    expect(isInitialized()).toBe(false);
+  });
+
+  it("incremental flush keeps running runs", async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 202, text: async () => "" });
+    const run = startRun({ userInput: "partial" });
+    run.startStep({ type: "llm", name: "a" }).end({ output: "x" });
+    await flush({ keepRunningRuns: true });
+    run.startStep({ type: "llm", name: "b" }).end({ output: "y" });
+    await run.end();
+    expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });
 

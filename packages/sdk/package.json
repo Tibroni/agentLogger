@@ -10,6 +10,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./auto": {
+      "types": "./dist/auto/index.d.ts",
+      "import": "./dist/auto/index.js"
+    },
+    "./middleware/http": {
+      "types": "./dist/middleware/http.d.ts",
+      "import": "./dist/middleware/http.js"
     }
   },
   "files": ["dist"],
