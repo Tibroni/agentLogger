@@ -1,6 +1,6 @@
 {
   "name": "agentlogger",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Local-first AI agent observability — auto-trace LLM calls and tools, view runs in a local dashboard",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,6 +25,18 @@
     "./middleware/http": {
       "types": "./dist/middleware/http.d.ts",
       "import": "./dist/middleware/http.js"
+    },
+    "./integrations/vercel-ai": {
+      "types": "./dist/integrations/vercel-ai.d.ts",
+      "import": "./dist/integrations/vercel-ai.js"
+    },
+    "./integrations/langchain": {
+      "types": "./dist/integrations/langchain.d.ts",
+      "import": "./dist/integrations/langchain.js"
+    },
+    "./integrations/openai": {
+      "types": "./dist/integrations/openai.d.ts",
+      "import": "./dist/integrations/openai.js"
     }
   },
   "bin": {
@@ -34,7 +46,7 @@
   "scripts": {
     "build": "node ../../scripts/build-agentlogger-package.mjs",
     "prepublishOnly": "npm run build",
-    "postinstall": "node ./bin/setup.js --yes || true"
+    "postinstall": "node ./bin/setup.js || true"
   },
   "dependencies": {},
   "devDependencies": {

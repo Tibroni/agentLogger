@@ -2,6 +2,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { init, isInitialized } from "../index.js";
+import { loadEnvFile } from "../load-env.js";
 
 function readLastDashboardUrl(): string | undefined {
   try {
@@ -33,6 +34,8 @@ function readPackageName(): string | undefined {
 
 export function autoInit(options: AutoInitOptions = {}): void {
   if (isInitialized()) return;
+
+  loadEnvFile();
 
   const projectId =
     options.projectId ??

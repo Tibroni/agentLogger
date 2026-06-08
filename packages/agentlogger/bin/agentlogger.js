@@ -8,6 +8,7 @@ import { runSetup } from "./setup.js";
 import { verifyDashboardDeps } from "./verify-dashboard.js";
 import { findAvailablePort } from "./find-port.js";
 import { writeDashboardState } from "./dashboard-state.js";
+import { migrateDatabaseFile } from "./migrate-db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const bundleRoot = path.join(__dirname, "..", "dashboard");
@@ -38,13 +39,17 @@ Environment variables:
 
 function ensureDatabase(databaseUrl) {
   const dbPath = databaseUrl.replace(/^file:/, "");
-  if (fs.existsSync(dbPath)) return;
-
   const templateDb = path.join(serverCwd, "prisma/template.db");
-  if (fs.existsSync(templateDb)) {
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    fs.copyFileSync(templateDb, dbPath);
+
+  if (!fs.existsSync(dbPath)) {
+    if (fs.existsSync(templateDb)) {
+      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+      fs.copyFileSync(templateDb, dbPath);
+    }
+    return;
   }
+
+  migrateDatabaseFile(dbPath);
 }
 
 async function startDashboard() {

@@ -13,7 +13,7 @@ export function parseJson<T = unknown>(value: string | null | undefined): T | nu
   }
 }
 
-export function runToDto(run: {
+type RunRow = {
   run_id: string;
   project_id: string;
   environment: string;
@@ -25,8 +25,35 @@ export function runToDto(run: {
   total_cost: number | null;
   status: string;
   final_output: string | null;
+  parent_run_id: string | null;
+  root_run_id: string | null;
   metadata: string | null;
-}) {
+};
+
+type StepRow = {
+  step_id: string;
+  run_id: string;
+  step_type: string;
+  step_name: string;
+  input_payload: string | null;
+  output_payload: string | null;
+  timestamp: Date;
+  duration_ms: number | null;
+  error_message: string | null;
+  parent_step_id: string | null;
+  attempt: number | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  model: string | null;
+  provider: string | null;
+  estimated_cost: number | null;
+  context_limit: number | null;
+  input_token_estimate: number | null;
+  time_to_first_token_ms: number | null;
+};
+
+export function runToDto(run: RunRow) {
   return {
     run_id: run.run_id,
     project_id: run.project_id,
@@ -39,21 +66,13 @@ export function runToDto(run: {
     total_cost: run.total_cost ?? undefined,
     status: run.status as RunStatus,
     final_output: run.final_output ?? undefined,
+    parent_run_id: run.parent_run_id ?? undefined,
+    root_run_id: run.root_run_id ?? undefined,
     metadata: parseJson<Record<string, unknown>>(run.metadata) ?? undefined,
   } satisfies Run;
 }
 
-export function stepToDto(step: {
-  step_id: string;
-  run_id: string;
-  step_type: string;
-  step_name: string;
-  input_payload: string | null;
-  output_payload: string | null;
-  timestamp: Date;
-  duration_ms: number | null;
-  error_message: string | null;
-}) {
+export function stepToDto(step: StepRow) {
   return {
     step_id: step.step_id,
     run_id: step.run_id,
@@ -64,6 +83,17 @@ export function stepToDto(step: {
     timestamp: step.timestamp.toISOString(),
     duration_ms: step.duration_ms ?? undefined,
     error_message: step.error_message ?? undefined,
+    parent_step_id: step.parent_step_id ?? undefined,
+    attempt: step.attempt ?? undefined,
+    prompt_tokens: step.prompt_tokens ?? undefined,
+    completion_tokens: step.completion_tokens ?? undefined,
+    total_tokens: step.total_tokens ?? undefined,
+    model: step.model ?? undefined,
+    provider: step.provider ?? undefined,
+    estimated_cost: step.estimated_cost ?? undefined,
+    context_limit: step.context_limit ?? undefined,
+    input_token_estimate: step.input_token_estimate ?? undefined,
+    time_to_first_token_ms: step.time_to_first_token_ms ?? undefined,
   } satisfies Step;
 }
 
@@ -113,30 +143,8 @@ export function evaluationToDto(evaluation: {
   } satisfies Evaluation;
 }
 
-export function runDetailToExport(run: {
-  run_id: string;
-  project_id: string;
-  environment: string;
-  user_input: string;
-  start_time: Date;
-  end_time: Date | null;
-  total_latency: number | null;
-  total_tokens: number | null;
-  total_cost: number | null;
-  status: string;
-  final_output: string | null;
-  metadata: string | null;
-  steps: Array<{
-    step_id: string;
-    run_id: string;
-    step_type: string;
-    step_name: string;
-    input_payload: string | null;
-    output_payload: string | null;
-    timestamp: Date;
-    duration_ms: number | null;
-    error_message: string | null;
-  }>;
+export function runDetailToExport(run: RunRow & {
+  steps: StepRow[];
   toolCalls: Array<{
     tool_call_id: string;
     run_id: string;

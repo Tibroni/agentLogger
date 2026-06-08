@@ -19,6 +19,8 @@ model Run {
   total_cost    Float?
   status        String
   final_output  String?
+  parent_run_id String?
+  root_run_id   String?
   metadata      String?
 
   steps       Step[]
@@ -28,23 +30,36 @@ model Run {
   @@index([project_id, start_time])
   @@index([environment])
   @@index([status])
+  @@index([parent_run_id])
 }
 
 model Step {
-  step_id         String   @id
-  run_id          String
-  step_type       String
-  step_name       String
-  input_payload   String?
-  output_payload  String?
-  timestamp       DateTime
-  duration_ms     Float?
-  error_message   String?
+  step_id               String   @id
+  run_id                String
+  step_type             String
+  step_name             String
+  input_payload         String?
+  output_payload        String?
+  timestamp             DateTime
+  duration_ms           Float?
+  error_message         String?
+  parent_step_id        String?
+  attempt               Int?
+  prompt_tokens         Int?
+  completion_tokens     Int?
+  total_tokens          Int?
+  model                 String?
+  provider              String?
+  estimated_cost        Float?
+  context_limit         Int?
+  input_token_estimate  Int?
+  time_to_first_token_ms Float?
 
   run       Run        @relation(fields: [run_id], references: [run_id], onDelete: Cascade)
   toolCalls ToolCall[]
 
   @@index([run_id])
+  @@index([parent_step_id])
 }
 
 model ToolCall {

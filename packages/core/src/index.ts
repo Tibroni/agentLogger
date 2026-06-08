@@ -26,6 +26,8 @@ export const RunSchema = z.object({
   total_cost: z.number().nonnegative().optional(),
   status: RunStatusSchema,
   final_output: z.string().optional(),
+  parent_run_id: z.string().uuid().optional(),
+  root_run_id: z.string().uuid().optional(),
   metadata: z.record(JsonValueSchema).optional(),
 });
 
@@ -41,6 +43,17 @@ export const StepSchema = z.object({
   timestamp: z.string().datetime(),
   duration_ms: z.number().nonnegative().optional(),
   error_message: z.string().optional(),
+  parent_step_id: z.string().uuid().optional(),
+  attempt: z.number().int().positive().optional(),
+  prompt_tokens: z.number().int().nonnegative().optional(),
+  completion_tokens: z.number().int().nonnegative().optional(),
+  total_tokens: z.number().int().nonnegative().optional(),
+  model: z.string().optional(),
+  provider: z.string().optional(),
+  estimated_cost: z.number().nonnegative().optional(),
+  context_limit: z.number().int().nonnegative().optional(),
+  input_token_estimate: z.number().int().nonnegative().optional(),
+  time_to_first_token_ms: z.number().nonnegative().optional(),
 });
 
 export type Step = z.infer<typeof StepSchema>;
@@ -106,13 +119,22 @@ export const RunListQuerySchema = z.object({
   environment: z.string().optional(),
   status: RunStatusSchema.optional(),
   run_id: z.string().optional(),
+  search: z.string().optional(),
+  tag: z.string().optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
   limit: z.coerce.number().int().positive().max(100).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
 
+export const RunCompareQuerySchema = z.object({
+  a: z.string().uuid(),
+  b: z.string().uuid(),
+  project_id: z.string().optional(),
+});
+
 export type RunListQuery = z.infer<typeof RunListQuerySchema>;
+export type RunCompareQuery = z.infer<typeof RunCompareQuerySchema>;
 
 export function parseIngestBatch(data: unknown): IngestBatchV1 {
   return IngestBatchV1Schema.parse(data);

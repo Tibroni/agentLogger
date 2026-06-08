@@ -17,6 +17,8 @@
 
 **Agent Logger** records what your AI agent does — user inputs, model calls, tool usage, latency, token counts, and failures — and displays it in a local web dashboard. No cloud account. No third-party telemetry. Data stays in a SQLite file on your computer (`~/.agentlogger/data.db`).
 
+Works with **any HTTP-based model** — OpenAI, Anthropic, Ollama, Groq, local vLLM, custom endpoints, and more. You are not limited to a fixed list of models.
+
 ### Why use it?
 
 Building agents means debugging chains of LLM calls, tools, and retries. Agent Logger gives you a clear **timeline for every run** so you can answer:
@@ -25,6 +27,7 @@ Building agents means debugging chains of LLM calls, tools, and retries. Agent L
 - Which model calls were made, in what order?
 - What tools ran, with what inputs and outputs?
 - Where did it fail, and how long did each step take?
+- How many tokens did each step cost?
 
 ---
 
@@ -36,12 +39,25 @@ Building agents means debugging chains of LLM calls, tools, and retries. Agent L
 npm install agentlogger
 ```
 
-On install, Agent Logger runs a one-time setup that:
+On install, Agent Logger may ask:
 
-- Adds `import "agentlogger/auto"` to your project's entry file
-- Creates a `.env` file with sensible defaults (if one doesn't exist)
+```text
+[agentlogger] Auto-configure this project? (adds import "agentlogger/auto" to your entry file) [y/N]:
+```
 
-To skip automatic setup (e.g. in CI): `AGENTLOGGER_SKIP_SETUP=1 npm install agentlogger`
+- **Yes** — patches your entry file and creates `.env` defaults (recommended for quick start)
+- **No** — skips file edits; add `import "agentlogger/auto"` yourself, or run `npx agentlogger setup --yes` later
+
+**Non-interactive installs** (CI, Docker, etc.) skip auto-patch by default. Traces still work after you add the import manually or run setup.
+
+| Skip / control setup | Command |
+| -------------------- | ------- |
+| Skip all setup | `AGENTLOGGER_SKIP_SETUP=1 npm install agentlogger` |
+| Force auto-patch (no prompt) | `AGENTLOGGER_SETUP=yes npm install agentlogger` |
+| Skip patch only | `AGENTLOGGER_SETUP=no npm install agentlogger` |
+| Re-run setup later | `npx agentlogger setup --yes` |
+
+Setup also creates or updates `.env` with project ID and API key defaults.
 
 ### 2. Start the dashboard
 
@@ -49,31 +65,66 @@ To skip automatic setup (e.g. in CI): `AGENTLOGGER_SKIP_SETUP=1 npm install agen
 npx agentlogger dashboard
 ```
 
-Open **http://localhost:3000**. Scope the UI to your project:
+Open the URL it prints (defaults to **http://localhost:3000**; picks the next free port if busy). The runs list opens immediately.
 
-```bash
-export NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID=my-agent
-npx agentlogger dashboard
-```
+The dashboard URL is saved to `~/.agentlogger/dashboard.json` so your agent auto-connects without copying the port.
 
 ### 3. Run your agent
 
-Run your agent as you normally would. **No manual tracing code required.**
-
-Agent Logger automatically records:
+Run your agent as you normally would. **No manual tracing code required** (if you accepted setup or added the import).
 
 | Event | How it's captured |
 | ----- | ----------------- |
 | LLM / model calls | Intercepts HTTP `fetch` requests to AI providers |
-| Tool calls | Via `instrumentTools()` (auto-applied when setup detects a tools file) |
+| Tool calls | Via `instrumentTools()` (auto-wrapped when setup detects a `tools` file) |
 | Errors & crashes | Hooks into uncaught exceptions and failed requests |
 | Run lifecycle | Starts on first activity, ends when your process exits |
 
-Works with **any HTTP-based model** — OpenAI, Anthropic, Ollama, Groq, Together, local vLLM, custom endpoints, and more.
-
 ### 4. View traces
 
-Go to **http://localhost:3000/runs**, click **Refresh**, and open a run to see the full timeline.
+Click a run to see the **agent timeline** — LLM steps with model/tokens/cost, tools, errors, and final output. Use **Compare** on the runs page to diff two runs.
+
+---
+
+## What's new in 1.2.0
+
+- **Agent timeline** — visual waterfall, per-step tokens & estimated cost, prompt/response previews
+- **Live refresh** — dashboard updates while a run is in progress
+- **Search** — find runs by user input, output, or metadata
+- **Compare runs** — side-by-side latency, tokens, and output diff
+- **Auto-evaluate** — one-click heuristic quality score on a run
+- **Export** — JSON, JSONL, or OpenTelemetry JSON
+- **Framework helpers** — optional wrappers for OpenAI SDK, LangChain, Vercel AI
+- **Context limit hints** — optional warning when a prompt is near a model's limit (configurable for any model)
+- **Interactive install** — choose whether setup auto-edits your source files
+
+---
+
+## Security & local-only use
+
+Agent Logger is designed for **local development**. By default:
+
+- The dashboard binds to your machine (`localhost` / `0.0.0.0` with local access)
+- The default API key is `dev-api-key-change-me`
+
+**If you expose the dashboard on a network** (LAN, VPS, tunnel), change the API key in both your agent `.env` and when starting the dashboard:
+
+```bash
+export OBSERVABILITY_API_KEY="your-long-random-secret"
+npx agentlogger dashboard
+```
+
+Sensitive fields in traces (API keys, tokens in headers) are redacted before storage.
+
+---
+
+## Package size
+
+The npm package is **larger than a typical SDK** because it bundles a full local dashboard (Next.js standalone) so you can run `npx agentlogger dashboard` with zero extra setup.
+
+**Why it's bundled:** one install gives you tracing + UI without installing Node apps separately.
+
+**Future options to reduce size** (not yet split): SDK-only package, optional dashboard download, or running the dashboard from source. For now, the tradeoff is install size vs. zero-config local debugging.
 
 ---
 
@@ -83,8 +134,8 @@ Go to **http://localhost:3000/runs**, click **Refresh**, and open a run to see t
 npm install agentlogger
         │
         ▼
-  postinstall setup
-  • patches entry file
+  postinstall setup (optional, asks first)
+  • patches entry file if you say yes
   • creates .env
         │
         ▼
@@ -106,47 +157,39 @@ Agent Logger does **not** require OpenAI or Anthropic SDKs. It watches outgoing 
 - Known AI provider hostnames (configurable via `AGENTLOGGER_LLM_HOSTS`)
 - Opt-in header: `X-AgentLogger-Trace: llm` for custom endpoints
 
-Token usage is extracted when present (OpenAI, Anthropic, Gemini, Ollama response formats).
-
 ### Tool tracing
-
-Wrap your tool registry once:
 
 ```ts
 import { instrumentTools } from "agentlogger/auto";
 
 export const tools = instrumentTools({
   getWeather: async (city: string) => { /* ... */ },
-  searchDocs: async (query: string) => { /* ... */ },
 });
 ```
 
 Or wrap individual tools: `wrapTool("getWeather", fn)`.
 
+### Framework integrations (optional)
+
+```ts
+import { traceOpenAiChatCompletion } from "agentlogger/integrations/openai";
+import { traceLangChainLlm, traceLangChainTool } from "agentlogger/integrations/langchain";
+import { traceVercelAiCall } from "agentlogger/integrations/vercel-ai";
+```
+
 ---
 
 ## Manual instrumentation (optional)
 
-For full control, use the SDK directly:
-
 ```ts
-import { init, startRun, withRun } from "agentlogger";
+import { init, startRun, startChildRun, withRun } from "agentlogger";
 
 init({ projectId: "my-agent" });
 
 const run = startRun({ userInput: "Hello" });
 const step = run.startStep({ type: "llm", name: "greet" });
 step.end({ output: "Hi!" });
-await run.end({ finalOutput: "Hi!", tokens: 42 });
-```
-
-Or wrap an entire handler:
-
-```ts
-await withRun({ userInput: "Hello" }, async (run) => {
-  run.startStep({ type: "llm", name: "answer" }).end({ output: "Hi!" });
-  return "Hi!";
-});
+await run.end({ finalOutput: "Hi!" });
 ```
 
 ---
@@ -155,7 +198,8 @@ await withRun({ userInput: "Hello" }, async (run) => {
 
 ```bash
 npx agentlogger dashboard   # Start the local dashboard (default)
-npx agentlogger setup       # Re-run project setup (patch entry, create .env)
+npx agentlogger setup       # Re-run project setup
+npx agentlogger setup --yes # Auto-patch without prompting
 npx agentlogger help        # Show commands and environment variables
 ```
 
@@ -163,32 +207,35 @@ npx agentlogger help        # Show commands and environment variables
 
 ## Configuration
 
-### Environment variables
+### Agent / SDK variables
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
-| `OBSERVABILITY_URL` | `http://localhost:3000` | Dashboard URL for trace ingest |
-| `OBSERVABILITY_API_KEY` | `dev-api-key-change-me` | Auth key (must match dashboard) |
+| `OBSERVABILITY_URL` | auto / `http://localhost:3000` | Dashboard URL; auto-reads `~/.agentlogger/dashboard.json` |
+| `OBSERVABILITY_API_KEY` | `dev-api-key-change-me` | Auth key — **change if dashboard is network-accessible** |
 | `AGENTLOGGER_PROJECT_ID` | `package.json` name | Project identifier for traces |
+| `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID` | same as above (set by setup) | Dashboard project filter |
 | `AGENTLOGGER_FLUSH_INTERVAL_MS` | `3000` | How often to sync traces while a run is active |
 | `AGENTLOGGER_LLM_HOSTS` | _(built-in list)_ | Extra LLM hostnames, comma-separated |
+| `AGENTLOGGER_CONTEXT_LIMITS` | — | Per-model context limits, e.g. `gpt-5=200000,llama-3=128000` |
+| `AGENTLOGGER_DEFAULT_CONTEXT_LIMIT` | — | Fallback context limit for unknown models |
 | `AGENTLOGGER_USER_INPUT` | auto-generated | Label for auto-created runs |
 | `AGENTLOGGER_SKIP_SETUP` | — | Set to `1` to skip postinstall setup |
+| `AGENTLOGGER_SETUP` | — | `yes` / `no` to force auto-patch behavior without prompt |
 | `AGENTLOGGER_FAIL_OPEN` | `true` (auto mode) | Don't crash your agent if dashboard is down |
 
 ### Dashboard variables
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
-| `PORT` | `3000` | Dashboard port |
-| `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID` | — | Filter UI to one project |
+| `PORT` | `3000` | Preferred dashboard port (uses next free port if busy) |
 | `DATABASE_URL` | `file:~/.agentlogger/data.db` | SQLite database path |
 
 ---
 
 ## HTTP server middleware
 
-For agents deployed as API servers, use one traced run per request:
+One traced run per HTTP request:
 
 ```ts
 import express from "express";
@@ -207,8 +254,9 @@ app.use(agentLoggerMiddleware({ userInputFrom: "message" }));
 | -------- | ----------- |
 | `init(options)` | Configure project ID, API key, base URL |
 | `startRun({ userInput, metadata? })` | Begin a traced run |
+| `startChildRun(parentRun, options)` | Begin a child run (multi-agent) |
 | `run.startStep({ type, name, input? })` | Start a step; call `.end()` or `.fail()` |
-| `run.logToolCall({ toolName, input, output?, success, durationMs? })` | Record a tool call |
+| `run.logToolCall({ toolName, input, ... })` | Record a tool call |
 | `run.recordUsage({ totalTokens?, model?, provider? })` | Accumulate token usage |
 | `run.end({ finalOutput?, status?, tokens?, cost? })` | Finish run and flush traces |
 | `withRun(options, fn)` | Auto end on success/error |
@@ -221,16 +269,23 @@ app.use(agentLoggerMiddleware({ userInputFrom: "message" }));
 | `agentlogger` | Manual SDK |
 | `agentlogger/auto` | Auto-instrumentation (side-effect import) |
 | `agentlogger/middleware/http` | HTTP server middleware |
+| `agentlogger/integrations/openai` | OpenAI SDK wrapper |
+| `agentlogger/integrations/langchain` | LangChain-style wrappers |
+| `agentlogger/integrations/vercel-ai` | Vercel AI SDK wrapper |
 
 ---
 
-## Project isolation
+## Export & compare
 
-The dashboard shows **one project at a time**. Use the same ID in both places:
+```bash
+# Export a run
+curl "/api/v1/runs/{runId}/export?format=json"    # default
+curl "/api/v1/runs/{runId}/export?format=jsonl"   # fine-tuning / pipelines
+curl "/api/v1/runs/{runId}/export?format=otel"    # OpenTelemetry JSON
 
-- **Auto mode:** `AGENTLOGGER_PROJECT_ID=my-agent` in `.env`
-- **Manual SDK:** `init({ projectId: "my-agent" })`
-- **Dashboard:** `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID=my-agent`
+# Compare two runs (browser)
+/runs/compare?a={runIdA}&b={runIdB}&project_id=my-agent
+```
 
 ---
 
@@ -238,19 +293,20 @@ The dashboard shows **one project at a time**. Use the same ID in both places:
 
 | Problem | Solution |
 | ------- | -------- |
-| No traces in dashboard | Is `npx agentlogger dashboard` running? Same API key in `.env` and dashboard? Refresh `/runs`. |
+| No traces in dashboard | Is `npx agentlogger dashboard` running? Same API key in `.env` and dashboard? Remove stale `OBSERVABILITY_URL` from `.env`. |
+| Setup didn't patch my files | You may have said no at install. Run `npx agentlogger setup --yes` or add `import "agentlogger/auto"` manually. |
 | Wrong project's runs | Set `NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID` to match `AGENTLOGGER_PROJECT_ID`. |
-| Auto setup didn't patch entry | Run `npx agentlogger setup` manually, or add `import "agentlogger/auto"` yourself. |
-| LLM calls not traced | Ensure requests use `fetch` with a JSON body containing `model` + `messages`. For custom endpoints, add `X-AgentLogger-Trace: llm` header or set `AGENTLOGGER_LLM_HOSTS`. |
-| Agent crashes when dashboard is down | Auto mode is fail-open by default. Set `AGENTLOGGER_FAIL_OPEN=true`. |
-| Port already in use | `PORT=3001 npx agentlogger dashboard` |
+| Dashboard crashes in a Next.js project | Use `agentlogger@1.2.0` or newer. |
+| LLM calls not traced | Ensure requests use `fetch`. For custom endpoints, add `X-AgentLogger-Trace: llm` or set `AGENTLOGGER_LLM_HOSTS`. |
+| Agent crashes when dashboard is down | Auto mode is fail-open by default (`AGENTLOGGER_FAIL_OPEN=true`). |
+| Port already in use | CLI picks the next free port and prints the URL. |
 
 ---
 
 ## Development (from source)
 
 ```bash
-git clone https://github.com/tibroni/agentLogger.git
+git clone https://github.com/Tibroni/agentLogger.git
 cd agentLogger
 cp .env.example .env
 cp apps/web/.env.example apps/web/.env
@@ -264,6 +320,8 @@ pnpm test          # unit + integration tests
 pnpm test:e2e      # full-stack acceptance tests
 pnpm build:npm     # build publishable npm package
 ```
+
+The published npm package is built from this repo via `pnpm build:npm`. Cloning from GitHub uses the monorepo layout above; npm users get the prebuilt bundle.
 
 ### Repository layout
 
@@ -279,4 +337,4 @@ examples/minimal-agent Auto and manual tracing examples
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

@@ -19,21 +19,33 @@ function defaultUserInput(): string {
   );
 }
 
+function createRunContext(userInput?: string, metadata?: Record<string, unknown>): RunContext {
+  const run = startRun({
+    userInput: userInput ?? defaultUserInput(),
+    metadata: { auto_instrumented: true, ...metadata },
+  });
+  return { run, manual: false, ending: false };
+}
+
+/** Script-mode singleton run (reused when no ALS context exists). */
 export function ensureAutoRun(userInput?: string): RunContext {
   const existing = getActiveRunContext();
-  if (existing) return existing;
+  if (existing && !existing.ending) return existing;
 
   if (processRunContext && !processRunContext.ending) {
     return processRunContext;
   }
 
-  const run = startRun({
-    userInput: userInput ?? defaultUserInput(),
-    metadata: { auto_instrumented: true },
-  });
-
-  processRunContext = { run, manual: false, ending: false };
+  processRunContext = createRunContext(userInput);
   return processRunContext;
+}
+
+/** Per-request / per-task isolated run (does not share process singleton). */
+export function createIsolatedRun(
+  userInput?: string,
+  metadata?: Record<string, unknown>
+): RunContext {
+  return createRunContext(userInput, metadata);
 }
 
 export function hasAutoRunEndScheduled(): boolean {
@@ -56,22 +68,46 @@ export function scheduleAutoRunEnd(finalOutput?: string): void {
   }, AUTO_RUN_IDLE_MS);
 }
 
+export async function endIsolatedRun(
+  ctx: RunContext,
+  options?: {
+    status?: "success" | "error";
+    finalOutput?: string;
+  }
+): Promise<void> {
+  if (ctx.ending) return;
+  ctx.ending = true;
+  try {
+    await ctx.run.end({
+      status: options?.status ?? "success",
+      finalOutput: options?.finalOutput,
+    });
+  } finally {
+    if (processRunContext === ctx) {
+      processRunContext = null;
+    }
+  }
+}
+
 export async function endAutoRun(options?: {
   status?: "success" | "error";
   finalOutput?: string;
 }): Promise<void> {
   clearAutoRunEndTimer();
-  if (!processRunContext || processRunContext.ending) return;
+  const ctx = getActiveRunContext() ?? processRunContext;
+  if (!ctx || ctx.ending) return;
 
-  processRunContext.ending = true;
+  ctx.ending = true;
   try {
-    await processRunContext.run.end({
+    await ctx.run.end({
       status: options?.status ?? "success",
       finalOutput: options?.finalOutput ?? pendingFinalOutput,
     });
   } finally {
     pendingFinalOutput = undefined;
-    processRunContext = null;
+    if (processRunContext === ctx) {
+      processRunContext = null;
+    }
   }
 }
 

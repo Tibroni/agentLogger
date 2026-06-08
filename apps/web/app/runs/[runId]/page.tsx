@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import { RunDetailActions } from "@/components/RunDetailActions";
 import { prisma } from "@/lib/prisma";
 import { runDetailToExport } from "@/lib/serialize";
 import {
@@ -50,10 +51,6 @@ export default async function RunDetailPage({
   }
 
   const detail = runDetailToExport(run);
-  const exportQuery = activeProjectId
-    ? `?format=json&project_id=${encodeURIComponent(activeProjectId)}`
-    : "?format=json";
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -64,15 +61,9 @@ export default async function RunDetailPage({
           <ArrowLeft className="h-4 w-4" />
           Back to runs
         </Link>
-        <a
-          href={`/api/v1/runs/${runId}/export${exportQuery}`}
-          className="inline-flex items-center gap-2 rounded-lg border border-surface-border px-3 py-1.5 text-sm hover:bg-surface-raised"
-        >
-          <Download className="h-4 w-4" />
-          Export JSON
-        </a>
+        <RunDetailActions runId={runId} projectId={activeProjectId ?? undefined} />
       </div>
-      <RunDetailView detail={detail} />
+      <RunDetailView detail={detail} live={run.status === "running"} />
       <EvaluationForm runId={runId} evaluations={detail.evaluations} />
     </div>
   );

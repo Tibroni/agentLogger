@@ -6,6 +6,7 @@ import type {
   Step,
   ToolCall,
 } from "@agentlogger/core";
+import { estimateCost } from "./pricing.js";
 
 export interface InitOptions {
   apiKey?: string;
@@ -21,16 +22,33 @@ export interface InitOptions {
 export interface StartRunOptions {
   userInput: string;
   metadata?: Record<string, unknown>;
+  parentRunId?: string;
+  rootRunId?: string;
 }
 
 export interface StartStepOptions {
   type: string;
   name: string;
   input?: unknown;
+  parentStepId?: string;
+  attempt?: number;
+}
+
+export interface StepUsageOptions {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  model?: string;
+  provider?: string;
+  estimatedCost?: number;
+  contextLimit?: number;
+  inputTokenEstimate?: number;
+  timeToFirstTokenMs?: number;
 }
 
 export interface EndStepOptions {
   output?: unknown;
+  usage?: StepUsageOptions;
 }
 
 export interface FailStepOptions {
@@ -98,7 +116,10 @@ const pendingRuns: Run[] = [];
 const pendingSteps: Step[] = [];
 const pendingToolCalls: ToolCall[] = [];
 
-const runUsageTotals = new Map<string, { tokens: number; model?: string }>();
+const runUsageTotals = new Map<
+  string,
+  { tokens: number; cost: number; model?: string }
+>();
 
 function scheduleFlushInterval(): void {
   if (flushTimer) {
@@ -272,11 +293,13 @@ export function startRun(options: StartRunOptions): AgentRun {
     user_input: options.userInput,
     start_time: startTime,
     status: "running",
+    parent_run_id: options.parentRunId,
+    root_run_id: options.rootRunId ?? options.parentRunId ?? runId,
     metadata: options.metadata,
   };
 
   pendingRuns.push(runRecord);
-  runUsageTotals.set(runId, { tokens: 0 });
+  runUsageTotals.set(runId, { tokens: 0, cost: 0 });
 
   const updateRunRecord = (updates: Partial<Run>) => {
     Object.assign(runRecord, updates);
@@ -298,6 +321,8 @@ export function startRun(options: StartRunOptions): AgentRun {
         step_name: stepOptions.name,
         input_payload: stepOptions.input,
         timestamp: new Date().toISOString(),
+        parent_step_id: stepOptions.parentStepId,
+        attempt: stepOptions.attempt,
       };
       pendingSteps.push(stepRecord);
 
@@ -309,6 +334,50 @@ export function startRun(options: StartRunOptions): AgentRun {
         }
       };
 
+      const applyStepUsage = (usage?: StepUsageOptions) => {
+        if (!usage) return;
+        const totalTokens =
+          usage.totalTokens ??
+          (usage.promptTokens != null && usage.completionTokens != null
+            ? usage.promptTokens + usage.completionTokens
+            : undefined);
+        const estimatedCost =
+          usage.estimatedCost ??
+          estimateCost({
+            model: usage.model,
+            promptTokens: usage.promptTokens,
+            completionTokens: usage.completionTokens,
+          });
+
+        const current = runUsageTotals.get(runId) ?? { tokens: 0, cost: 0 };
+        if (totalTokens != null) current.tokens += totalTokens;
+        if (estimatedCost != null) current.cost += estimatedCost;
+        if (usage.model) current.model = usage.model;
+        runUsageTotals.set(runId, current);
+
+        updateRunRecord({
+          total_tokens: current.tokens,
+          total_cost: current.cost,
+          metadata: {
+            ...(runRecord.metadata as Record<string, unknown> | undefined),
+            last_model: usage.model,
+            last_provider: usage.provider,
+          },
+        });
+
+        finalizeStep({
+          prompt_tokens: usage.promptTokens,
+          completion_tokens: usage.completionTokens,
+          total_tokens: totalTokens,
+          model: usage.model,
+          provider: usage.provider,
+          estimated_cost: estimatedCost,
+          context_limit: usage.contextLimit,
+          input_token_estimate: usage.inputTokenEstimate,
+          time_to_first_token_ms: usage.timeToFirstTokenMs,
+        });
+      };
+
       return {
         stepId,
         end(endOptions?: EndStepOptions) {
@@ -318,6 +387,7 @@ export function startRun(options: StartRunOptions): AgentRun {
             output_payload: endOptions?.output,
             duration_ms: endTime - startMs,
           });
+          applyStepUsage(endOptions?.usage);
         },
         fail(failOptions: FailStepOptions) {
           const endTime = Date.now();
@@ -350,11 +420,17 @@ export function startRun(options: StartRunOptions): AgentRun {
     },
 
     recordUsage(usageOptions: RecordUsageOptions): void {
-      const current = runUsageTotals.get(runId) ?? { tokens: 0 };
+      const current = runUsageTotals.get(runId) ?? { tokens: 0, cost: 0 };
       const added =
         usageOptions.totalTokens ??
         (usageOptions.promptTokens ?? 0) + (usageOptions.completionTokens ?? 0);
       current.tokens += added;
+      const stepCost = estimateCost({
+        model: usageOptions.model,
+        promptTokens: usageOptions.promptTokens,
+        completionTokens: usageOptions.completionTokens,
+      });
+      if (stepCost != null) current.cost += stepCost;
       if (usageOptions.model) current.model = usageOptions.model;
       runUsageTotals.set(runId, current);
 
@@ -363,7 +439,11 @@ export function startRun(options: StartRunOptions): AgentRun {
         last_model: usageOptions.model,
         last_provider: usageOptions.provider,
       };
-      updateRunRecord({ metadata, total_tokens: current.tokens });
+      updateRunRecord({
+        metadata,
+        total_tokens: current.tokens,
+        total_cost: current.cost,
+      });
     },
 
     async end(endOptions?: EndRunOptions): Promise<void> {
@@ -376,7 +456,7 @@ export function startRun(options: StartRunOptions): AgentRun {
         end_time: endTime.toISOString(),
         total_latency: totalLatency,
         total_tokens: endOptions?.tokens ?? usage?.tokens,
-        total_cost: endOptions?.cost,
+        total_cost: endOptions?.cost ?? usage?.cost,
         status: endOptions?.status ?? "success",
         final_output: endOptions?.finalOutput,
       });
@@ -389,6 +469,21 @@ export function startRun(options: StartRunOptions): AgentRun {
       await flush();
     },
   };
+}
+
+export function startChildRun(
+  parentRun: AgentRun,
+  options: Omit<StartRunOptions, "parentRunId" | "rootRunId">
+): AgentRun {
+  return startRun({
+    ...options,
+    parentRunId: parentRun.runId,
+    rootRunId: undefined,
+    metadata: {
+      ...options.metadata,
+      parent_run_id: parentRun.runId,
+    },
+  });
 }
 
 export async function withRun<T>(

@@ -29,4 +29,11 @@ export function resetAutoInstrumentationForTests(): void {
 
 export { autoInit } from "./init.js";
 export { wrapTool, instrumentTools } from "./tools.js";
-export { ensureAutoRun, endAutoRun, withAutoRun, withAutoRunAsync } from "./lifecycle.js";
+export {
+  ensureAutoRun,
+  createIsolatedRun,
+  endAutoRun,
+  endIsolatedRun,
+  withAutoRun,
+  withAutoRunAsync,
+} from "./lifecycle.js";

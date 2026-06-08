@@ -44,6 +44,8 @@ export async function POST(request: NextRequest) {
             total_cost: run.total_cost ?? null,
             status: run.status,
             final_output: run.final_output ?? null,
+            parent_run_id: run.parent_run_id ?? null,
+            root_run_id: run.root_run_id ?? null,
             metadata: run.metadata ? serializeJson(run.metadata) : null,
           },
           update: {
@@ -53,6 +55,8 @@ export async function POST(request: NextRequest) {
             total_cost: run.total_cost ?? null,
             status: run.status,
             final_output: run.final_output ?? null,
+            parent_run_id: run.parent_run_id ?? null,
+            root_run_id: run.root_run_id ?? null,
             metadata: run.metadata ? serializeJson(run.metadata) : null,
           },
         });
@@ -79,6 +83,17 @@ export async function POST(request: NextRequest) {
             timestamp: new Date(step.timestamp),
             duration_ms: step.duration_ms ?? null,
             error_message: step.error_message ?? null,
+            parent_step_id: step.parent_step_id ?? null,
+            attempt: step.attempt ?? null,
+            prompt_tokens: step.prompt_tokens ?? null,
+            completion_tokens: step.completion_tokens ?? null,
+            total_tokens: step.total_tokens ?? null,
+            model: step.model ?? null,
+            provider: step.provider ?? null,
+            estimated_cost: step.estimated_cost ?? null,
+            context_limit: step.context_limit ?? null,
+            input_token_estimate: step.input_token_estimate ?? null,
+            time_to_first_token_ms: step.time_to_first_token_ms ?? null,
           },
           update: {
             output_payload:
@@ -87,6 +102,17 @@ export async function POST(request: NextRequest) {
                 : null,
             duration_ms: step.duration_ms ?? null,
             error_message: step.error_message ?? null,
+            parent_step_id: step.parent_step_id ?? null,
+            attempt: step.attempt ?? null,
+            prompt_tokens: step.prompt_tokens ?? null,
+            completion_tokens: step.completion_tokens ?? null,
+            total_tokens: step.total_tokens ?? null,
+            model: step.model ?? null,
+            provider: step.provider ?? null,
+            estimated_cost: step.estimated_cost ?? null,
+            context_limit: step.context_limit ?? null,
+            input_token_estimate: step.input_token_estimate ?? null,
+            time_to_first_token_ms: step.time_to_first_token_ms ?? null,
           },
         });
       }

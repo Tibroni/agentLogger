@@ -18,6 +18,18 @@
     "./middleware/http": {
       "types": "./dist/middleware/http.d.ts",
       "import": "./dist/middleware/http.js"
+    },
+    "./integrations/vercel-ai": {
+      "types": "./dist/integrations/vercel-ai.d.ts",
+      "import": "./dist/integrations/vercel-ai.js"
+    },
+    "./integrations/langchain": {
+      "types": "./dist/integrations/langchain.d.ts",
+      "import": "./dist/integrations/langchain.js"
+    },
+    "./integrations/openai": {
+      "types": "./dist/integrations/openai.d.ts",
+      "import": "./dist/integrations/openai.js"
     }
   },
   "files": ["dist"],

@@ -1,5 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { ensureAutoRun, endAutoRun } from "../auto/lifecycle.js";
+import {
+  createIsolatedRun,
+  endIsolatedRun,
+} from "../auto/lifecycle.js";
 import { runInContextAsync } from "../auto/context.js";
 import { autoInit } from "../auto/init.js";
 
@@ -63,12 +66,10 @@ export function agentLoggerMiddleware(options: HttpMiddlewareOptions = {}) {
   ): Promise<void> => {
     const body = req.body ?? (await readJsonBody(req));
     const userInput = resolveUserInput(body, req, options);
-    const ctx = ensureAutoRun(userInput);
+    const ctx = createIsolatedRun(userInput, { http_request: true });
 
     const finish = async (status: "success" | "error", output?: string) => {
-      if (ctx.ending) return;
-      ctx.ending = true;
-      await endAutoRun({ status, finalOutput: output });
+      await endIsolatedRun(ctx, { status, finalOutput: output });
     };
 
     res.on("finish", () => {

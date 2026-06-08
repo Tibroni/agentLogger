@@ -10,6 +10,14 @@ import {
   readResponseBody,
   sanitizeHeaders,
 } from "./sanitize.js";
+import { resolveRetryAttempt, registerRetryStep } from "./retry.js";
+import { parseSseStream } from "./streaming.js";
+import { estimateCost } from "../pricing.js";
+import {
+  getContextLimit,
+  estimateInputTokens,
+  isNearContextLimit,
+} from "../context-window.js";
 
 const AGENTLOGGER_FETCH = Symbol.for("agentlogger.originalFetch");
 
@@ -29,7 +37,10 @@ async function handleStreamingResponse(
   response: Response,
   step: ReturnType<ReturnType<typeof ensureAutoRun>["run"]["startStep"]>,
   run: ReturnType<typeof ensureAutoRun>["run"],
-  host: string
+  host: string,
+  model?: string,
+  inputEstimate?: number,
+  contextLimit?: number
 ): Promise<Response> {
   if (!response.body) return response;
 
@@ -37,19 +48,53 @@ async function handleStreamingResponse(
   const reader = logStream.getReader();
   const decoder = new TextDecoder();
   let accumulated = "";
+  let firstTokenMs: number | undefined;
+  const streamStart = Date.now();
 
   void (async () => {
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (firstTokenMs == null && value?.length) {
+          firstTokenMs = Date.now() - streamStart;
+        }
         accumulated += decoder.decode(value, { stream: true });
         if (accumulated.length > 256 * 1024) {
           accumulated = accumulated.slice(-256 * 1024);
         }
       }
-      step.end({ output: { stream: accumulated.slice(0, 8192) } });
-      run.recordUsage({ provider: host });
+
+      const parsed = parseSseStream(accumulated);
+      const usage = parsed.usage ?? {};
+      const estimatedCost = estimateCost({
+        model,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+      });
+
+      step.end({
+        output: { stream: parsed.text || accumulated.slice(0, 8192) },
+        usage: {
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          totalTokens: usage.totalTokens,
+          model,
+          provider: host,
+          estimatedCost,
+          contextLimit,
+          inputTokenEstimate: inputEstimate,
+          timeToFirstTokenMs: firstTokenMs,
+        },
+      });
+
+      run.recordUsage({
+        ...usage,
+        model,
+        provider: host,
+      });
+
+      if (parsed.text) scheduleAutoRunEnd(parsed.text);
     } catch (error) {
       step.fail({ error: error instanceof Error ? error : String(error) });
     }
@@ -97,6 +142,10 @@ export function patchFetch(): void {
     }
 
     const ctx = ensureAutoRun();
+    const retry = resolveRetryAttempt(url, detection.model, parsedBody);
+    const inputEstimate = estimateInputTokens(parsedBody);
+    const contextLimit = getContextLimit(detection.model);
+
     const step = ctx.run.startStep({
       type: "llm",
       name: detection.model ?? detection.host,
@@ -105,8 +154,17 @@ export function patchFetch(): void {
         method: mergedInit.method ?? "GET",
         headers: sanitizeHeaders(mergedInit.headers),
         body: parsedBody,
+        input_token_estimate: inputEstimate,
+        context_limit: contextLimit,
+        near_context_limit: isNearContextLimit({
+          inputTokenEstimate: inputEstimate,
+          contextLimit,
+        }),
       },
+      parentStepId: retry.parentStepId,
+      attempt: retry.attempt,
     });
+    registerRetryStep(step.stepId, url, detection.model, parsedBody);
 
     const startMs = Date.now();
 
@@ -119,21 +177,48 @@ export function patchFetch(): void {
         response.headers?.get?.("content-type")?.toLowerCase() ?? "";
 
       if (detection.streaming || contentType.includes("text/event-stream")) {
-        return handleStreamingResponse(response, step, ctx.run, detection.host);
+        return handleStreamingResponse(
+          response,
+          step,
+          ctx.run,
+          detection.host,
+          detection.model,
+          inputEstimate,
+          contextLimit
+        );
       }
 
       const responseForRead =
         typeof response.clone === "function" ? response.clone() : response;
       const { body: responseBody } = await readResponseBody(responseForRead);
-      const durationMs = Date.now() - startMs;
 
       if (!response.ok) {
         step.fail({
           error: `HTTP ${response.status}: ${JSON.stringify(responseBody).slice(0, 500)}`,
         });
       } else {
-        step.end({ output: responseBody });
         const usage = extractUsage(responseBody);
+        const estimatedCost = estimateCost({
+          model: detection.model,
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+        });
+
+        step.end({
+          output: responseBody,
+          usage: {
+            promptTokens: usage.promptTokens,
+            completionTokens: usage.completionTokens,
+            totalTokens: usage.totalTokens,
+            model: detection.model,
+            provider: detection.host,
+            estimatedCost,
+            contextLimit,
+            inputTokenEstimate: inputEstimate,
+            timeToFirstTokenMs: Date.now() - startMs,
+          },
+        });
+
         ctx.run.recordUsage({
           ...usage,
           model: detection.model,
@@ -142,7 +227,6 @@ export function patchFetch(): void {
         scheduleAutoRunEnd(extractAssistantText(responseBody));
       }
 
-      void durationMs;
       return response;
     } catch (error) {
       step.fail({ error: error instanceof Error ? error : String(error) });

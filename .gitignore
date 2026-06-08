@@ -112,6 +112,15 @@ Desktop.ini
 # Local-only dev/test (not part of the open-source release)
 # -----------------------------------------------------------------------------
 test-openai-smoke/
+.smoke-data.db
+
+# Local agentlogger state if created inside the repo (normal path: ~/.agentlogger/)
+.agentlogger/
+
+# -----------------------------------------------------------------------------
+# Editor / IDE (not required to build or run from GitHub)
+# -----------------------------------------------------------------------------
+.cursor/
 
 # -----------------------------------------------------------------------------
 # Internal / non-public docs

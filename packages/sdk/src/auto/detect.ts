@@ -118,11 +118,38 @@ export function extractAssistantText(body: unknown): string | undefined {
   if (!body || typeof body !== "object" || Array.isArray(body)) return undefined;
 
   const record = body as Record<string, unknown>;
+
+  // OpenAI chat completions
   const choices = record.choices as
     | Array<{ message?: { content?: string } }>
     | undefined;
-  const text = choices?.[0]?.message?.content;
-  return typeof text === "string" && text.trim() ? text.trim() : undefined;
+  const openaiText = choices?.[0]?.message?.content;
+  if (typeof openaiText === "string" && openaiText.trim()) return openaiText.trim();
+
+  // Anthropic messages
+  const content = record.content as Array<{ type?: string; text?: string }> | undefined;
+  if (Array.isArray(content)) {
+    const anthropicText = content
+      .filter((block) => block.type === "text" && typeof block.text === "string")
+      .map((block) => block.text)
+      .join("");
+    if (anthropicText.trim()) return anthropicText.trim();
+  }
+
+  // Gemini candidates
+  const candidates = record.candidates as
+    | Array<{ content?: { parts?: Array<{ text?: string }> } }>
+    | undefined;
+  const geminiText = candidates?.[0]?.content?.parts
+    ?.map((part) => part.text ?? "")
+    .join("");
+  if (geminiText?.trim()) return geminiText.trim();
+
+  // Stream wrapper from auto instrumentation
+  const stream = record.stream;
+  if (typeof stream === "string" && stream.trim()) return stream.trim();
+
+  return undefined;
 }
 
 export function extractUsage(body: unknown): TokenUsage {

@@ -12,8 +12,18 @@ export async function GET(request: NextRequest) {
     return badRequestResponse("Invalid query parameters", parsed.error.flatten());
   }
 
-  const { project_id, environment, status, run_id, from, to, limit, offset } =
-    parsed.data;
+  const {
+    project_id,
+    environment,
+    status,
+    run_id,
+    search,
+    tag,
+    from,
+    to,
+    limit,
+    offset,
+  } = parsed.data;
 
   const where: {
     project_id?: string;
@@ -21,6 +31,12 @@ export async function GET(request: NextRequest) {
     status?: string;
     run_id?: { startsWith: string };
     start_time?: { gte?: Date; lte?: Date };
+    metadata?: { contains: string };
+    OR?: Array<{
+      user_input?: { contains: string };
+      final_output?: { contains: string };
+      metadata?: { contains: string };
+    }>;
   } = {};
 
   if (project_id) where.project_id = project_id;
@@ -33,12 +49,29 @@ export async function GET(request: NextRequest) {
     if (to) where.start_time.lte = new Date(to);
   }
 
-  const [runs, total, aggregates] = await Promise.all([
+  if (search) {
+    where.OR = [
+      { user_input: { contains: search } },
+      { final_output: { contains: search } },
+      { metadata: { contains: search } },
+    ];
+  } else if (tag) {
+    where.metadata = { contains: tag };
+  }
+
+  const [runs, total, aggregates, errorCount] = await Promise.all([
     prisma.run.findMany({
       where,
       orderBy: { start_time: "desc" },
       take: limit,
       skip: offset,
+      include: {
+        evaluations: {
+          where: { eval_type: "automated" },
+          orderBy: { created_at: "desc" },
+          take: 1,
+        },
+      },
     }),
     prisma.run.count({ where }),
     prisma.run.aggregate({
@@ -46,14 +79,14 @@ export async function GET(request: NextRequest) {
       _avg: { total_latency: true, total_cost: true },
       _count: { _all: true },
     }),
+    prisma.run.count({ where: { ...where, status: "error" } }),
   ]);
 
-  const errorCount = await prisma.run.count({
-    where: { ...where, status: "error" },
-  });
-
   return Response.json({
-    runs: runs.map(runToDto),
+    runs: runs.map((run) => ({
+      ...runToDto(run),
+      latest_eval_score: run.evaluations[0]?.score ?? undefined,
+    })),
     total,
     metrics: {
       avg_latency: aggregates._avg.total_latency ?? 0,
