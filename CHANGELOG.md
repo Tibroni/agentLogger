@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1
+
+### Fixed
+- Dashboard `project_id` no longer defaults to `minimal-agent` on fresh installs — CLI reads your `.env` / `package.json` name at launch
+- Published dashboard bundle no longer bakes the monorepo dev project id at build time
+
 ## 1.2.0
 
 ### Dashboard

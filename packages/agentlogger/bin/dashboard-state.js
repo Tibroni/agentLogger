@@ -8,12 +8,20 @@ const statePath = path.join(dataDir, "dashboard.json");
 export function writeDashboardState({ port, projectId }) {
   fs.mkdirSync(dataDir, { recursive: true });
   const url = `http://localhost:${port}`;
+  const trimmedProjectId = projectId?.trim();
+  const browserUrl = trimmedProjectId
+    ? `${url}/runs?project_id=${encodeURIComponent(trimmedProjectId)}`
+    : `${url}/runs`;
   fs.writeFileSync(
     statePath,
-    `${JSON.stringify({ port, url, projectId, updatedAt: new Date().toISOString() }, null, 2)}\n`,
+    `${JSON.stringify(
+      { port, url, browserUrl, projectId: trimmedProjectId, updatedAt: new Date().toISOString() },
+      null,
+      2
+    )}\n`,
     "utf8"
   );
-  return url;
+  return browserUrl;
 }
 
 export function readDashboardUrl() {

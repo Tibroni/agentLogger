@@ -9,6 +9,7 @@ import { verifyDashboardDeps } from "./verify-dashboard.js";
 import { findAvailablePort } from "./find-port.js";
 import { writeDashboardState } from "./dashboard-state.js";
 import { migrateDatabaseFile } from "./migrate-db.js";
+import { resolveProjectId } from "./resolve-project-id.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const bundleRoot = path.join(__dirname, "..", "dashboard");
@@ -68,34 +69,31 @@ async function startDashboard() {
     console.log(`Port ${requestedPort} is in use — using ${port} instead.`);
   }
 
+  const projectId = resolveProjectId(process.cwd());
   const apiKey = process.env.OBSERVABILITY_API_KEY ?? "dev-api-key-change-me";
 
   process.env.PORT = String(port);
   process.env.HOSTNAME = process.env.HOSTNAME ?? "0.0.0.0";
-  if (process.env.NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID) {
-    process.env.OBSERVABILITY_PROJECT_ID =
-      process.env.NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID;
+  if (projectId) {
+    // Runtime override — must not rely on NEXT_PUBLIC baked at npm build time.
+    process.env.OBSERVABILITY_PROJECT_ID = projectId;
+    process.env.NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID = projectId;
   }
   process.env.DATABASE_URL = process.env.DATABASE_URL ?? defaultDb;
   process.env.OBSERVABILITY_API_KEY = apiKey;
   process.env.NEXT_PUBLIC_OBSERVABILITY_API_KEY =
     process.env.NEXT_PUBLIC_OBSERVABILITY_API_KEY ?? apiKey;
 
-  const dashboardUrl = writeDashboardState({
-    port,
-    projectId: process.env.NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID,
-  });
+  const dashboardUrl = writeDashboardState({ port, projectId });
 
   console.log(`Agent Logger dashboard → ${dashboardUrl}`);
   console.log("Your agent will auto-connect to this URL (saved in ~/.agentlogger/dashboard.json)");
-  if (process.env.NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID) {
-    console.log(`Project filter: ${process.env.NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID}`);
-  } else if (process.env.AGENTLOGGER_PROJECT_ID) {
-    console.log(
-      `Tip: set NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID=${process.env.AGENTLOGGER_PROJECT_ID} to filter the dashboard`
-    );
+  if (projectId) {
+    console.log(`Project filter: ${projectId}`);
   } else {
-    console.log("Tip: set NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID to match your project");
+    console.log(
+      "Tip: set AGENTLOGGER_PROJECT_ID in .env (or use a package.json name) to filter the dashboard"
+    );
   }
 
   ensureDatabase(process.env.DATABASE_URL);

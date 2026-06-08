@@ -77,7 +77,16 @@ console.log("Building agentlogger npm package...");
 execSync("pnpm exec tsup", { cwd: pkgDir, stdio: "inherit" });
 
 console.log("Building web app...");
-execSync("pnpm exec next build", { cwd: webDir, stdio: "inherit" });
+// Do not bake monorepo dev project id into the published dashboard client bundle.
+execSync("pnpm exec next build", {
+  cwd: webDir,
+  stdio: "inherit",
+  env: {
+    ...process.env,
+    NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID: "",
+    OBSERVABILITY_PROJECT_ID: "",
+  },
+});
 
 if (!existsSync(path.join(webStandalone, "server.js"))) {
   console.error("Standalone server not found. Check apps/web next.config output: standalone");
