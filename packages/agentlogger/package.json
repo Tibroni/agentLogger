@@ -1,6 +1,6 @@
 {
   "name": "agentlogger",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Local-first AI agent observability — auto-trace LLM calls and tools, view runs in a local dashboard",
   "type": "module",
   "main": "./dist/index.js",

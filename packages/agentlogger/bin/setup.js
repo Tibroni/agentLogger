@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AUTO_IMPORT = 'import "agentlogger/auto";';
 
 const ENV_LINES = [
-  "OBSERVABILITY_URL=http://localhost:3000",
+  "# OBSERVABILITY_URL is optional — set after first dashboard start, or leave unset to auto-read ~/.agentlogger/dashboard.json",
   "OBSERVABILITY_API_KEY=dev-api-key-change-me",
   "# AGENTLOGGER_PROJECT_ID=your-project-name",
   "AGENTLOGGER_FLUSH_INTERVAL_MS=3000",

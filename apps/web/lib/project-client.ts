@@ -1,5 +1,9 @@
 "use client";
 
+import { runDetailHref, runsListHref } from "@/lib/project";
+
+export { runDetailHref, runsListHref };
+
 const STORAGE_KEY = "agentlogger:project_id";
 
 /** Resolved project filter: URL param → localStorage → build-time env default. */
@@ -19,12 +23,3 @@ export function persistProjectId(projectId: string): void {
   localStorage.setItem(STORAGE_KEY, projectId.trim());
 }
 
-export function runsListHref(projectId: string): string {
-  if (!projectId) return "/runs";
-  return `/runs?project_id=${encodeURIComponent(projectId)}`;
-}
-
-export function runDetailHref(runId: string, projectId: string): string {
-  if (!projectId) return `/runs/${runId}`;
-  return `/runs/${runId}?project_id=${encodeURIComponent(projectId)}`;
-}

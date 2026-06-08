@@ -1,7 +1,7 @@
 import { autoInit } from "./init.js";
 import { patchFetch } from "./fetch.js";
 import { registerErrorHandlers } from "./errors.js";
-import { endAutoRun } from "./lifecycle.js";
+import { endAutoRun, hasAutoRunEndScheduled } from "./lifecycle.js";
 
 let enabled = false;
 
@@ -14,7 +14,8 @@ export function enableAutoInstrumentation(): void {
   registerErrorHandlers();
 
   process.on("beforeExit", () => {
-    void endAutoRun();
+    if (hasAutoRunEndScheduled()) return;
+    void endAutoRun().catch(() => undefined);
   });
 }
 

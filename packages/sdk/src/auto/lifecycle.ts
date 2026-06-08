@@ -7,6 +7,10 @@ import {
 import { startRun, type AgentRun } from "../index.js";
 
 let processRunContext: RunContext | null = null;
+let idleEndTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingFinalOutput: string | undefined;
+
+const AUTO_RUN_IDLE_MS = Number(process.env.AGENTLOGGER_AUTO_END_IDLE_MS ?? 1000);
 
 function defaultUserInput(): string {
   return (
@@ -32,19 +36,41 @@ export function ensureAutoRun(userInput?: string): RunContext {
   return processRunContext;
 }
 
+export function hasAutoRunEndScheduled(): boolean {
+  return idleEndTimer != null;
+}
+
+export function clearAutoRunEndTimer(): void {
+  if (!idleEndTimer) return;
+  clearTimeout(idleEndTimer);
+  idleEndTimer = null;
+}
+
+/** End the auto run after a quiet period (scripts exit before beforeExit can flush). */
+export function scheduleAutoRunEnd(finalOutput?: string): void {
+  if (finalOutput) pendingFinalOutput = finalOutput;
+  clearAutoRunEndTimer();
+  idleEndTimer = setTimeout(() => {
+    idleEndTimer = null;
+    void endAutoRun({ status: "success", finalOutput: pendingFinalOutput });
+  }, AUTO_RUN_IDLE_MS);
+}
+
 export async function endAutoRun(options?: {
   status?: "success" | "error";
   finalOutput?: string;
 }): Promise<void> {
+  clearAutoRunEndTimer();
   if (!processRunContext || processRunContext.ending) return;
 
   processRunContext.ending = true;
   try {
     await processRunContext.run.end({
       status: options?.status ?? "success",
-      finalOutput: options?.finalOutput,
+      finalOutput: options?.finalOutput ?? pendingFinalOutput,
     });
   } finally {
+    pendingFinalOutput = undefined;
     processRunContext = null;
   }
 }
@@ -62,5 +88,7 @@ export async function withAutoRunAsync<T>(
 }
 
 export function resetLifecycleForTests(): void {
+  clearAutoRunEndTimer();
+  pendingFinalOutput = undefined;
   processRunContext = null;
 }

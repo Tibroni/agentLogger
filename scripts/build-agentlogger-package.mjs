@@ -2,10 +2,24 @@
 /**
  * Builds the single npm package: SDK (dist/) + dashboard (dashboard/)
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execSync } from "child_process";
+import {
+  materializeEntryNodeModules,
+  relativizeSymlinks,
+  verifyDashboardBundle,
+} from "./dashboard-bundle-utils.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const webDir = path.join(root, "apps/web");
@@ -54,7 +68,12 @@ function pruneDashboardBundle(dashboardRoot) {
   if (existsSync(serverDir)) walk(serverDir);
 }
 
-console.log("Building SDK...");
+const sdkDir = path.join(root, "packages/sdk");
+
+console.log("Building workspace SDK...");
+execSync("pnpm exec tsup", { cwd: sdkDir, stdio: "inherit" });
+
+console.log("Building agentlogger npm package...");
 execSync("pnpm exec tsup", { cwd: pkgDir, stdio: "inherit" });
 
 console.log("Building web app...");
@@ -68,7 +87,10 @@ if (!existsSync(path.join(webStandalone, "server.js"))) {
 rmSync(dest, { recursive: true, force: true });
 mkdirSync(dest, { recursive: true });
 cpSync(standaloneRoot, dest, { recursive: true });
+relativizeSymlinks(dest, standaloneRoot);
+materializeEntryNodeModules(dest);
 pruneDashboardBundle(dest);
+verifyDashboardBundle(dest);
 
 cpSync(path.join(webDir, ".next/static"), path.join(dest, "apps/web/.next/static"), {
   recursive: true,
@@ -94,5 +116,18 @@ execSync("pnpm exec prisma db push --skip-generate", {
   env: { ...process.env, DATABASE_URL: `file:${templateDb}` },
   stdio: "pipe",
 });
+
+/** Remove machine-specific absolute paths baked into Next standalone server.js */
+function sanitizeBundledServerConfig(dashboardRoot, monorepoRoot) {
+  const serverJs = path.join(dashboardRoot, "apps/web/server.js");
+  if (!existsSync(serverJs)) return;
+
+  let content = readFileSync(serverJs, "utf8");
+  const escapedRoot = monorepoRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  content = content.replace(new RegExp(escapedRoot, "g"), ".");
+  writeFileSync(serverJs, content, "utf8");
+}
+
+sanitizeBundledServerConfig(dest, root);
 
 console.log("Done. packages/agentlogger is ready to publish.");

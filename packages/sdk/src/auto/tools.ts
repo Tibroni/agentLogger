@@ -1,4 +1,4 @@
-import { ensureAutoRun } from "./lifecycle.js";
+import { ensureAutoRun, scheduleAutoRunEnd } from "./lifecycle.js";
 import { runInContextAsync } from "./context.js";
 
 export type ToolFn = (...args: unknown[]) => unknown;
@@ -18,6 +18,9 @@ export function wrapTool<T extends ToolFn>(name: string, fn: T): T {
         success: true,
         durationMs: Date.now() - startMs,
       });
+      scheduleAutoRunEnd(
+        typeof result === "string" ? result : JSON.stringify(result)
+      );
       return result;
     } catch (error) {
       ctx.run.logToolCall({

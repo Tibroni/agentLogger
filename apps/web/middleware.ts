@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-
-const projectId = process.env.NEXT_PUBLIC_OBSERVABILITY_PROJECT_ID?.trim();
+import { getDashboardProjectId } from "@/lib/project";
 
 export function middleware(request: NextRequest) {
-  if (!projectId) return NextResponse.next();
-
+  const projectId = getDashboardProjectId();
   const { pathname, searchParams } = request.nextUrl;
+
+  if (pathname === "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/runs";
+    if (projectId) url.searchParams.set("project_id", projectId);
+    return NextResponse.redirect(url);
+  }
+
+  if (!projectId) return NextResponse.next();
   if (!pathname.startsWith("/runs")) return NextResponse.next();
   if (searchParams.has("project_id")) return NextResponse.next();
 
@@ -16,5 +23,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/runs", "/runs/:path*"],
+  matcher: ["/", "/runs", "/runs/:path*"],
 };

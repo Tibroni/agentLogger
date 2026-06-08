@@ -8,7 +8,7 @@ import {
 } from "@/lib/project";
 import { RunDetailView } from "@/components/RunDetailView";
 import { EvaluationForm } from "@/components/EvaluationForm";
-import { runsListHref } from "@/lib/project-client";
+import { runsListHref } from "@/lib/project";
 
 export default async function RunDetailPage({
   params,

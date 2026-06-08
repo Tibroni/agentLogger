@@ -167,11 +167,46 @@ describe("fetch patch", () => {
     const batch = getPendingBatch();
     expect(batch.steps?.length ?? 0).toBe(0);
   });
+
+  it("ends auto run after idle period when LLM fetch completes", async () => {
+    vi.useFakeTimers();
+    process.env.AGENTLOGGER_AUTO_END_IDLE_MS = "1000";
+
+    try {
+      await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: [{ role: "user", content: "hi" }],
+        }),
+      });
+
+      expect(getPendingBatch().runs?.[0]?.status).toBe("running");
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      const ingestCalls = mockOriginal.mock.calls.filter((call) =>
+        String(call[0]).includes("/api/v1/ingest")
+      );
+      const lastIngest = ingestCalls.at(-1)?.[1]?.body;
+      const payload =
+        typeof lastIngest === "string" ? JSON.parse(lastIngest) : null;
+      expect(payload?.runs?.[0]?.status).toBe("success");
+      expect(payload?.runs?.[0]?.final_output).toBe("hello");
+    } finally {
+      vi.useRealTimers();
+      delete process.env.AGENTLOGGER_AUTO_END_IDLE_MS;
+      resetLifecycleForTests();
+    }
+  });
 });
 
 describe("fail-open flush", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     resetForTests();
+    resetLifecycleForTests();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockRejectedValue(new Error("network down"))
@@ -180,6 +215,7 @@ describe("fail-open flush", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    resetLifecycleForTests();
   });
 
   it("does not throw when failOpen is enabled", async () => {

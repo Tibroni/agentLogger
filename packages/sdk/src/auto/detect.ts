@@ -114,6 +114,17 @@ export interface TokenUsage {
   completionTokens?: number;
 }
 
+export function extractAssistantText(body: unknown): string | undefined {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return undefined;
+
+  const record = body as Record<string, unknown>;
+  const choices = record.choices as
+    | Array<{ message?: { content?: string } }>
+    | undefined;
+  const text = choices?.[0]?.message?.content;
+  return typeof text === "string" && text.trim() ? text.trim() : undefined;
+}
+
 export function extractUsage(body: unknown): TokenUsage {
   if (!body || typeof body !== "object") return {};
 

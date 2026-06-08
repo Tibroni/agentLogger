@@ -1,5 +1,9 @@
-import { detectLlmRequest, extractUsage } from "./detect.js";
-import { ensureAutoRun } from "./lifecycle.js";
+import {
+  detectLlmRequest,
+  extractAssistantText,
+  extractUsage,
+} from "./detect.js";
+import { ensureAutoRun, scheduleAutoRunEnd } from "./lifecycle.js";
 import { runInContextAsync } from "./context.js";
 import {
   readRequestBody,
@@ -135,6 +139,7 @@ export function patchFetch(): void {
           model: detection.model,
           provider: detection.host,
         });
+        scheduleAutoRunEnd(extractAssistantText(responseBody));
       }
 
       void durationMs;

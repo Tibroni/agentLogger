@@ -6,6 +6,11 @@ import { cpSync, mkdirSync, rmSync, existsSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execSync } from "child_process";
+import {
+  materializeEntryNodeModules,
+  relativizeSymlinks,
+  verifyDashboardBundle,
+} from "./dashboard-bundle-utils.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const webDir = path.join(root, "apps/web");
@@ -22,6 +27,8 @@ rmSync(dest, { recursive: true, force: true });
 mkdirSync(dest, { recursive: true });
 
 cpSync(standaloneRoot, dest, { recursive: true });
+relativizeSymlinks(dest, standaloneRoot);
+materializeEntryNodeModules(dest);
 
 const staticSrc = path.join(webDir, ".next/static");
 const staticDest = path.join(dest, "apps/web/.next/static");
@@ -45,4 +52,5 @@ try {
   console.warn("Could not create template.db:", e.message);
 }
 
+verifyDashboardBundle(dest);
 console.log("Dashboard bundle written to packages/cli/dashboard");

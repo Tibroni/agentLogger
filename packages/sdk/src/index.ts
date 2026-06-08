@@ -122,11 +122,6 @@ function registerShutdownHooks(): void {
   if (shutdownHooksRegistered) return;
   shutdownHooksRegistered = true;
 
-  const onShutdown = () => {
-    void flush().catch(() => undefined);
-  };
-
-  process.on("beforeExit", onShutdown);
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
       void flush().finally(() => process.exit(0));
@@ -385,6 +380,10 @@ export function startRun(options: StartRunOptions): AgentRun {
         status: endOptions?.status ?? "success",
         final_output: endOptions?.finalOutput,
       });
+
+      if (!pendingRuns.some((r) => r.run_id === runId)) {
+        pendingRuns.push(runRecord);
+      }
 
       runUsageTotals.delete(runId);
       await flush();
